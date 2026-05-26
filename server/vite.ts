@@ -4,11 +4,15 @@ import path, { dirname } from "path";
 import { fileURLToPath } from "url";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
+import { createServer as createViteServer, createLogger } from "vite";
+import react from "@vitejs/plugin-react";
+import themePlugin from "@replit/vite-plugin-shadcn-theme-json";
+import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ── log: pure utility, zero vite dependency — safe in production ──────────
+// ── log: pure utility ─────────────────────────────────────────────────────
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -20,25 +24,10 @@ export function log(message: string, source = "express") {
 }
 
 // ── setupVite: dev-only ───────────────────────────────────────────────────
-//
-// IMPORTANT — why dynamic package imports:
-//   esbuild bundles local file imports (../vite.config) and hoists their
-//   static `import` statements to the top of dist/index.js, causing
-//   ERR_MODULE_NOT_FOUND for vite plugins at production startup.
-//
-//   Dynamic imports of *packages* (strings without ./ or ../) are left as
-//   runtime-only `import()` expressions in the esbuild output — they are
-//   never resolved unless this function is actually called.
-//
-//   In production NODE_ENV=production, setupVite is never called, so none
-//   of these packages are ever loaded. ✅
-//
+// Called only when NODE_ENV !== "production".
+// Uses configFile:false so we never import vite.config.ts as a module
+// (which would cause esbuild to hoist that local file import and break prod).
 export async function setupVite(app: Express, server: Server) {
-  const { createServer: createViteServer, createLogger } = await import("vite");
-  const { default: react }               = await import("@vitejs/plugin-react");
-  const { default: themePlugin }         = await import("@replit/vite-plugin-shadcn-theme-json");
-  const { default: runtimeErrorOverlay } = await import("@replit/vite-plugin-runtime-error-modal");
-
   const viteLogger = createLogger();
   const clientRoot = path.resolve(__dirname, "..", "client");
 
