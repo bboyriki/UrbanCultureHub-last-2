@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { SiAppstore } from "react-icons/si";
-import logoImage from "@assets/u9932826292_A_modern_dynamic_logo_for_Urban_Culture_-_a_creat__1773277819543.png";
+const logoImage = "/logo.png";
 
 const DISMISS_KEY = "web_app_banner_dismissed";
 

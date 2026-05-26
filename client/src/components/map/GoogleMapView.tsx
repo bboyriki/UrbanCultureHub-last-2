@@ -37,7 +37,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import AddLocationModal from "./AddLocationModal";
-import breakdancerIcon from "@assets/23787bf9e9a5b4fe4b567aa33e9b0cac-breakdance-cut-out-boy_1764545071853.webp";
+const breakdancerIcon = "/breakdancer-icon.webp";
 
 const mapContainerStyle = {
   width: "100%",
