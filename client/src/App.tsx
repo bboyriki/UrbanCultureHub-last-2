@@ -412,6 +412,13 @@ const LiveViewersPage           = lazyWithRetry(() => import("@/pages/admin/live
 const FeatureSettingsPage       = lazyWithRetry(() => import("@/pages/admin/feature-settings"));
 const ThemeControlPage          = lazyWithRetry(() => import("@/pages/admin/theme-control"));
 const HomepageBuilderPage       = lazyWithRetry(() => import("@/pages/admin/homepage-builder"));
+// Proper component for /admin redirect — avoids Rules of Hooks violation
+function AdminRedirect() {
+  const [, navigate] = useLocation();
+  useEffect(() => { navigate("/admin/overview", { replace: true }); }, []);
+  return null;
+}
+
 const SecurityCenterPage        = lazyWithRetry(() => import("@/pages/admin/security-center"));
 const AdminOverviewPage         = lazyWithRetry(() => import("@/pages/admin/overview"));
 const AdminMemoryCalendarPage   = lazyWithRetry(() => import("@/pages/admin/memory-calendar"));
@@ -804,14 +811,7 @@ function App() {
                         )}
                       </Route>
 
-                      <Route path="/admin">
-                        {() => {
-                          // Redirect /admin → /admin/overview (the unified Command Center)
-                          const [, navigate] = useLocation();
-                          useEffect(() => { navigate("/admin/overview", { replace: true }); }, []);
-                          return null;
-                        }}
-                      </Route>
+                      <Route path="/admin" component={AdminRedirect} />
 
                       {/* /admin/tools — full AdminView SPA with all classic admin features
                           (Ticket Scanner, Spotlight, Business Verification, Email Inbox,
