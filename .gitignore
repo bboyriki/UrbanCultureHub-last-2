@@ -19,7 +19,6 @@ vite.config.ts.*
 .cache/
 .upm/
 .replit
-replit.nix
 server/data/city_spots_cache.json
 
 # Large asset folders — use Git LFS or external storage instead
