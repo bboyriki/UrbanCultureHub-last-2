@@ -1,7 +1,12 @@
-import express, { type Express } from "express";
+/**
+ * Dev-only Vite middleware — this file imports "vite" and is therefore
+ * NEVER imported in production. server/index.ts loads it via dynamic import
+ * only when NODE_ENV !== "production".
+ */
 import fs from "fs";
 import path, { dirname } from "path";
 import { fileURLToPath } from "url";
+import { type Express } from "express";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import { createServer as createViteServer, createLogger } from "vite";
@@ -12,19 +17,7 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ── log: pure utility ─────────────────────────────────────────────────────
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-
 // ── setupVite: dev-only ───────────────────────────────────────────────────
-// Called only when NODE_ENV !== "production".
 // Uses configFile:false so we never import vite.config.ts as a module
 // (which would cause esbuild to hoist that local file import and break prod).
 export async function setupVite(app: Express, server: Server) {
@@ -77,32 +70,5 @@ export async function setupVite(app: Express, server: Server) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }
-  });
-}
-
-// ── serveStatic: production — serves pre-built frontend, no vite needed ──
-export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
-
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
-  }
-
-  app.use("/assets", express.static(path.join(distPath, "assets"), {
-    maxAge: "1y",
-    immutable: true,
-  }));
-
-  app.use(express.static(distPath, { maxAge: 0 }));
-
-  app.use("*", (_req, res) => {
-    res.set({
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      "Pragma":        "no-cache",
-      "Expires":       "0",
-    });
-    res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

@@ -5,7 +5,8 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { log } from "./logger";
+import { serveStatic } from "./static";
 import { createDefaultAdmin } from "./admin";
 import { initCloudinary } from "./cloudinary";
 import { initializeStripePrices } from "./stripe";
@@ -416,7 +417,11 @@ async function backgroundInit() {
     });
 
     // 3. Static file serving / Vite dev server
+    // vite.ts is only imported in dev — it statically imports the "vite" npm
+    // package which must NOT be loaded in production (it's a devDependency and
+    // is pruned from the Docker image). Dynamic import keeps it dev-only.
     if (app.get("env") === "development") {
+      const { setupVite } = await import("./vite.js");
       await setupVite(app, server);
     } else {
       serveStatic(app);
