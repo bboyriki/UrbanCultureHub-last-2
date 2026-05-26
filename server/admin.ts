@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { log } from "./vite";
+import { log } from "./logger";
 import { UserRole } from "../shared/schema";
 
 const ADMIN_ROLES: string[] = [UserRole.ADMIN, 'super_admin'];
