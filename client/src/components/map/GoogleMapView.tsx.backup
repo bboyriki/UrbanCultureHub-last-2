@@ -1,0 +1,1526 @@
+import { useState, useCallback, useRef, useEffect, ReactElement } from "react";
+import { GoogleMap, InfoWindow, Marker } from "@react-google-maps/api"; // Keep Marker for compatibility
+import { useTheme } from "@/contexts/ThemeContext";
+// AdvancedMarkerElement will be available via the global google namespace
+// since we've loaded the marker library in GoogleMapsLoader.tsx
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { motion } from "framer-motion";
+import usePlacesAutocomplete, { getGeocode, getLatLng } from "use-places-autocomplete";
+import { Location } from "@shared/schema";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader } from "@googlemaps/js-api-loader";
+import { LucideIcon } from "lucide-react";
+import { queryClient } from "@/lib/queryClient";
+
+// Map container styles
+const mapContainerStyle = {
+  width: "100%",
+  height: "100%",
+};
+
+// Default center (Amsterdam)
+const defaultCenter = {
+  lat: 52.3676,
+  lng: 4.9041,
+};
+
+// Options for the Google Map
+const mapOptions = {
+  disableDefaultUI: false,
+  zoomControl: true,
+  mapTypeControl: false,
+  streetViewControl: true,
+  fullscreenControl: true,
+};
+
+// Dark mode map styles
+const darkModeStyles = [
+  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d59563" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d59563" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#263c3f" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#6b9a76" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#38414e" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#212a37" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#9ca5b3" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#746855" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1f2835" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#f3d19c" }],
+  },
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#2f3948" }],
+  },
+  {
+    featureType: "transit.station",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d59563" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#17263c" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#515c6d" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.stroke",
+    stylers: [{ color: "#17263c" }],
+  },
+];
+
+interface GoogleMapViewProps {
+  events: any[];
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+}
+
+const GoogleMapView = ({ 
+  events,
+  searchQuery, 
+  setSearchQuery
+}: GoogleMapViewProps) => {
+  const { isDarkMode } = useTheme();
+  const { toast } = useToast();
+  const [selectedBattle, setSelectedBattle] = useState<any | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [mapZoom, setMapZoom] = useState(13);
+  const [showCategoryLegend, setShowCategoryLegend] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+
+  // The Google Maps API is loaded via the GoogleMapsLoader component wrapper
+  // No need to load it here
+  
+  // Handle clicking outside of filter panel to close it
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (filterPanelRef.current && 
+          !filterPanelRef.current.contains(event.target as Node) && 
+          showFilterPanel) {
+        setShowFilterPanel(false);
+      }
+    }
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showFilterPanel]);
+
+  // Setup Places Autocomplete
+  const {
+    ready,
+    value,
+    suggestions: { status, data },
+    setValue,
+    clearSuggestions,
+  } = usePlacesAutocomplete({
+    requestOptions: {
+      /* Define search scope here */
+      componentRestrictions: { country: 'nl' }, // Focus on Netherlands as example - change as needed
+    },
+    debounce: 300,
+  });
+
+  // Handle map load
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+  }, []);
+
+  // Handle suggestion selection
+  const handleSelect = async (description: string) => {
+    setValue(description, false);
+    clearSuggestions();
+    setSearchQuery(description);
+
+    try {
+      const results = await getGeocode({ address: description });
+      const { lat, lng } = await getLatLng(results[0]);
+      setMapCenter({ lat, lng });
+      setMapZoom(15);
+    } catch (error) {
+      console.error("Error: ", error);
+    }
+  };
+
+  // Find user's current location
+  const handleGetCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const currentPosition = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setUserLocation(currentPosition);
+          setMapCenter(currentPosition);
+          setMapZoom(16);
+          
+          toast({
+            title: "Location found",
+            description: "Your current location has been set on the map.",
+          });
+        },
+        (error) => {
+          toast({
+            title: "Location error",
+            description: error.message || "Unable to get your current location",
+            variant: "destructive",
+          });
+        }
+      );
+    } else {
+      toast({
+        title: "Geolocation not supported",
+        description: "Your browser does not support geolocation",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Function to get marker icon based on location type
+  const getMarkerIcon = (type: string) => {
+    // Define custom marker icons for different spot types
+    const iconMap: Record<string, { url: string, scaledSize: google.maps.Size }> = {
+      // Urban Art & Performance Categories
+      graffiti: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', // Red
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      dance: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', // Blue
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      music: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/purple-dot.png', // Purple
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      rap: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/pink-dot.png', // Dark Pink
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      performance: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/ltblue-dot.png', // Teal/Light Blue
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      
+      // Urban Sports & Training Categories
+      skate: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png', // Green
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      parkour: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png', // Yellow
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      training: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/orange-dot.png', // Orange
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      bmx: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/lightblue-dot.png', // Light Blue
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      street_sports: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png', // Dark Green (using standard green as fallback)
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      
+      // Event & Community Spaces
+      cultural_hub: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/brown-dot.png', // Brown (limited options in default Google maps icons)
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      open_mic: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/pink-dot.png', // Pink
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      workshop: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', // Dark Blue (using standard blue as fallback)
+        scaledSize: new google.maps.Size(40, 40),
+      },
+      
+      // Default icon for other/unknown types
+      other: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/grey-dot.png', // Grey
+        scaledSize: new google.maps.Size(40, 40),
+      },
+    };
+
+    return iconMap[type] || {
+      url: 'https://maps.google.com/mapfiles/ms/icons/grey-dot.png',
+      scaledSize: new google.maps.Size(40, 40),
+    };
+  };
+
+
+  // The Maps API is already loaded via the GoogleMapsLoader component
+  
+  // Function to create an advanced marker element
+  const createAdvancedMarker = useCallback((location: Location, onClick: () => void) => {
+    // Use only if google.maps.marker.AdvancedMarkerElement is available (modern browsers)
+    if (window.google && google.maps && google.maps.marker && google.maps.marker.AdvancedMarkerElement) {
+      // Parse location coordinates
+      const position = {
+        lat: parseFloat(location.latitude),
+        lng: parseFloat(location.longitude),
+      };
+      
+      // Get color based on type
+      const colorClass = getLocationTypeBadgeColor(location.type).replace('bg-', '');
+      let color = '#6B7280'; // Default gray
+      
+      // Map Tailwind color classes to hex colors
+      if (colorClass.includes('red')) color = '#EF4444';
+      else if (colorClass.includes('blue')) color = '#3B82F6';
+      else if (colorClass.includes('green')) color = '#10B981';
+      else if (colorClass.includes('yellow')) color = '#F59E0B';
+      else if (colorClass.includes('purple')) color = '#8B5CF6';
+      else if (colorClass.includes('pink')) color = '#EC4899';
+      else if (colorClass.includes('indigo')) color = '#6366F1';
+      else if (colorClass.includes('orange')) color = '#F97316';
+      else if (colorClass.includes('teal')) color = '#14B8A6';
+      else if (colorClass.includes('sky')) color = '#0EA5E9';
+      else if (colorClass.includes('emerald')) color = '#10B981';
+      else if (colorClass.includes('amber')) color = '#F59E0B';
+      
+      // Create marker container
+      const markerContainer = document.createElement('div');
+      markerContainer.className = 'marker-container';
+      markerContainer.style.position = 'relative';
+      
+      // Create pin element with proper styling
+      const pinElement = document.createElement('div');
+      pinElement.className = 'marker-pin';
+      pinElement.style.cssText = `
+        width: 32px;
+        height: 32px;
+        border-radius: 50% 50% 50% 0;
+        background: ${color};
+        position: relative;
+        transform: rotate(-45deg);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        cursor: pointer;
+        transition: all 0.3s;
+      `;
+      
+      // Create pin center (for displaying location features)
+      const pinCenter = document.createElement('div');
+      pinCenter.className = 'marker-pin-center';
+      pinCenter.style.cssText = `
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: white;
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        transform: rotate(45deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: bold;
+        color: ${color};
+      `;
+      
+      // Add feature icons to identify key attributes
+      if (location.isFree) {
+        pinCenter.innerHTML = '✓'; // Free access
+        pinCenter.title = 'Free access';
+      } else {
+        pinCenter.innerHTML = '€'; // Paid access
+        pinCenter.title = 'Paid access';
+      }
+      
+      // Add pin label for the location name
+      const pinLabel = document.createElement('div');
+      pinLabel.className = 'marker-pin-label';
+      pinLabel.style.cssText = `
+        position: absolute;
+        bottom: -24px;
+        left: 50%;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        background-color: rgba(0, 0, 0, 0.6);
+        color: white;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 10px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+      `;
+      pinLabel.textContent = location.name;
+      
+      // Add additional features badges
+      const featureIndicators = document.createElement('div');
+      featureIndicators.className = 'marker-feature-indicators';
+      featureIndicators.style.cssText = `
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      `;
+      
+      // Skill level indicator if available
+      if (location.skillLevel) {
+        const skillBadge = document.createElement('div');
+        skillBadge.style.cssText = `
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #8B5CF6;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 8px;
+          color: white;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        `;
+        
+        // Set skill level indicator
+        if (location.skillLevel === 'beginner') {
+          skillBadge.innerHTML = 'B';
+          skillBadge.title = 'Beginner friendly';
+        } else if (location.skillLevel === 'intermediate') {
+          skillBadge.innerHTML = 'I';
+          skillBadge.title = 'Intermediate level';
+        } else if (location.skillLevel === 'advanced') {
+          skillBadge.innerHTML = 'A';
+          skillBadge.title = 'Advanced level';
+        } else if (location.skillLevel === 'all') {
+          skillBadge.innerHTML = 'A';
+          skillBadge.title = 'All skill levels';
+        }
+        
+        featureIndicators.appendChild(skillBadge);
+      }
+      
+      // Accessibility indicator if available
+      if (location.accessibility) {
+        const accessibilityBadge = document.createElement('div');
+        accessibilityBadge.style.cssText = `
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #10B981;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 8px;
+          color: white;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        `;
+        accessibilityBadge.innerHTML = '♿';
+        accessibilityBadge.title = 'Accessible';
+        featureIndicators.appendChild(accessibilityBadge);
+      }
+      
+      // Add all elements to the marker container
+      pinElement.appendChild(pinCenter);
+      markerContainer.appendChild(pinElement);
+      markerContainer.appendChild(pinLabel);
+      markerContainer.appendChild(featureIndicators);
+      
+      // Add hover effects
+      markerContainer.addEventListener('mouseover', () => {
+        pinElement.style.transform = 'rotate(-45deg) scale(1.2)';
+        pinLabel.style.opacity = '1';
+      });
+      
+      markerContainer.addEventListener('mouseout', () => {
+        pinElement.style.transform = 'rotate(-45deg) scale(1)';
+        pinLabel.style.opacity = '0';
+      });
+      
+      // Add click event
+      markerContainer.addEventListener('click', onClick);
+      
+      try {
+        // Create the advanced marker with the custom element
+        const advancedMarker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapRef.current,
+          position,
+          content: markerContainer,
+          title: location.name || 'Location',
+        });
+        
+        return advancedMarker;
+      } catch (error) {
+        console.error("Error creating advanced marker:", error);
+        return null;
+      }
+    }
+    
+    return null;
+  }, [mapRef]);
+
+  // State for advanced markers
+  const [advancedMarkers, setAdvancedMarkers] = useState<any[]>([]);
+  
+  // Create user location marker using advanced marker
+  const createUserLocationMarker = useCallback(() => {
+    if (!userLocation || !window.google?.maps?.marker?.AdvancedMarkerElement || !mapRef.current) {
+      return null;
+    }
+    
+    try {
+      // Create a pulsing blue dot for user location
+      const userDot = document.createElement('div');
+      userDot.className = 'user-location-marker';
+      userDot.style.cssText = `
+        width: 24px;
+        height: 24px;
+        background-color: #3B82F6;
+        border-radius: 50%;
+        box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.3);
+        animation: pulse 1.5s infinite;
+        position: relative;
+      `;
+      
+      // Add animation keyframes to document if not already present
+      if (!document.getElementById('user-marker-animation')) {
+        const style = document.createElement('style');
+        style.id = 'user-marker-animation';
+        style.textContent = `
+          @keyframes pulse {
+            0% {
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+            }
+            70% {
+              box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+            }
+            100% {
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      // Create the advanced marker for user location
+      const advancedUserMarker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapRef.current,
+        position: userLocation,
+        content: userDot,
+        title: 'Your Location',
+        zIndex: 1000, // Make sure user dot appears above other markers
+      });
+      
+      return advancedUserMarker;
+    } catch (error) {
+      console.error("Error creating user location marker:", error);
+      return null;
+    }
+  }, [userLocation, mapRef]);
+  
+  // State for user location marker
+  const [userLocationMarker, setUserLocationMarker] = useState<any>(null);
+  
+  // Effect to manage the user location marker
+  useEffect(() => {
+    if (userLocationMarker) {
+      userLocationMarker.map = null;
+    }
+    
+    const newUserMarker = createUserLocationMarker();
+    setUserLocationMarker(newUserMarker);
+    
+    return () => {
+      if (newUserMarker) {
+        newUserMarker.map = null;
+      }
+    };
+  }, [createUserLocationMarker]);
+
+  // Function to create battle markers
+  const createBattleMarker = useCallback((battle: any) => {
+    if (!window.google?.maps?.marker?.AdvancedMarkerElement || !mapRef.current) return null;
+    
+    try {
+      // Parse battle coordinates (events have latitude/longitude as strings)
+      const position = {
+        lat: parseFloat(battle.latitude),
+        lng: parseFloat(battle.longitude),
+      };
+      
+      // Create stunning dance battle marker container
+      const markerContainer = document.createElement('div');
+      markerContainer.className = 'battle-marker-container';
+      markerContainer.style.cssText = `
+        position: relative;
+        cursor: pointer;
+      `;
+      
+      // Create dynamic breakdance marker with pulsing effect
+      const pinElement = document.createElement('div');
+      pinElement.className = 'battle-pin';
+      pinElement.style.cssText = `
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #FF6B35 0%, #F72585 35%, #7209B7 70%, #3A0CA3 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 8px 24px rgba(247, 37, 133, 0.6), 0 0 40px rgba(114, 9, 183, 0.4);
+        border: 4px solid white;
+        transition: all 0.3s ease;
+        animation: battlePulse 2s infinite ease-in-out;
+      `;
+      
+      // Add pulsing animation
+      if (!document.getElementById('battle-marker-animations')) {
+        const style = document.createElement('style');
+        style.id = 'battle-marker-animations';
+        style.textContent = `
+          @keyframes battlePulse {
+            0%, 100% { 
+              transform: scale(1); 
+              box-shadow: 0 8px 24px rgba(247, 37, 133, 0.6), 0 0 40px rgba(114, 9, 183, 0.4);
+            }
+            50% { 
+              transform: scale(1.05); 
+              box-shadow: 0 12px 32px rgba(247, 37, 133, 0.8), 0 0 60px rgba(114, 9, 183, 0.6);
+            }
+          }
+          @keyframes spinDancer {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      // Add breakdance icon
+      pinElement.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="white">
+          <circle cx="9" cy="4" r="2"/>
+          <path d="M16.5 17.5c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5zm-9 0C6.12 17.5 5 18.62 5 20s1.12 2.5 2.5 2.5S10 21.38 10 20s-1.12-2.5-2.5-2.5zM6 8l2.5 4 3-1.5L13 15l2-1.5-1.5-4.5L17 7l-1.5-1.5L12 7 10 5.5 6 8z"/>
+        </svg>
+      `;
+      
+      markerContainer.appendChild(pinElement);
+      
+      // Add hover effect
+      markerContainer.addEventListener('mouseenter', () => {
+        pinElement.style.transform = 'scale(1.2) rotate(5deg)';
+        pinElement.style.boxShadow = '0 16px 40px rgba(247, 37, 133, 0.9), 0 0 80px rgba(114, 9, 183, 0.7)';
+      });
+      
+      markerContainer.addEventListener('mouseleave', () => {
+        pinElement.style.transform = 'scale(1)';
+        pinElement.style.boxShadow = '0 8px 24px rgba(247, 37, 133, 0.6), 0 0 40px rgba(114, 9, 183, 0.4)';
+      });
+      
+      const advancedMarker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapRef.current,
+        position: position,
+        content: markerContainer,
+        title: battle.title || 'Battle Event',
+        zIndex: 500,
+      });
+      
+      // Add click handler
+      markerContainer.addEventListener('click', () => {
+        setSelectedBattle(battle);
+        setSelectedMarker(null);
+      });
+      
+      return advancedMarker;
+    } catch (error) {
+      console.error("Error creating battle marker:", error);
+      return null;
+    }
+  }, [mapRef]);
+
+  // Effect to handle advanced markers creation and cleanup
+  useEffect(() => {
+    // Create advanced markers if the API is available
+    if (window.google && google.maps && google.maps.marker && google.maps.marker.AdvancedMarkerElement && mapRef.current) {
+      // Clear any existing markers
+      advancedMarkers.forEach(marker => {
+        if (marker && marker.map) {
+          marker.map = null;
+        }
+      });
+      
+      let allMarkers: any[] = [];
+      
+      // Create battle markers
+      if (events && Array.isArray(events)) {
+        const battleMarkers = events
+          .filter(event => event.latitude && event.longitude)
+          .map(event => createBattleMarker(event))
+          .filter(Boolean);
+        allMarkers = [...allMarkers, ...battleMarkers];
+      }
+      
+      setAdvancedMarkers(allMarkers);
+      
+      // Cleanup function
+      return () => {
+        allMarkers.forEach(marker => {
+          if (marker && marker.map) {
+            marker.map = null;
+          }
+        });
+      };
+    }
+  }, [events, createBattleMarker, mapRef]);
+
+  // Define location type categories for filtering
+  const locationCategories = [
+    { 
+      name: 'All', 
+      type: 'all',
+      color: 'gray', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 6C3 4.34315 4.34315 3 6 3H18C19.6569 3 21 4.34315 21 6V18C21 19.6569 19.6569 21 18 21H6C4.34315 21 3 19.6569 3 18V6Z" 
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Graffiti', 
+      type: 'graffiti',
+      color: 'red', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Dance', 
+      type: 'dance',
+      color: 'blue', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 15h8M10 7h4m-2 11v3m2-9l2.5 3M9.5 12L7 15m10-3.5a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Music', 
+      type: 'music',
+      color: 'purple', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 18V5l12-2v13M9 18c0 1.657-1.343 3-3 3s-3-1.343-3-3 1.343-3 3-3 3 1.343 3 3zm12-2c0 1.657-1.343 3-3 3s-3-1.343-3-3 1.343-3 3-3 3 1.343 3 3z" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Skate', 
+      type: 'skate',
+      color: 'green', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 16c1.456 0 2.608-1.104 2.996-2.5M5 16H3m2 0v2m2.996-2.5L9 13m-1.004.5l1.997-.5m-1.997.5C7.243 14.735 6.178 16 5 16M9 9c1.5 0 2-1 2-2V4m-2 5h2m5 7c-1.456 0-2.608-1.104-2.996-2.5M16 16h2m-2 0v2m-2.996-2.5L15 13m1.004.5l-1.997-.5m1.997.5c.753 1.235 1.818 2.5 2.996 2.5M15 9c-1.5 0-2-1-2-2V4" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Parkour', 
+      type: 'parkour',
+      color: 'yellow', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 5l8 11m0 0l.1.77a2 2 0 002.1 1.73h0a2 2 0 001.5-.7l6.3-7.2a1 1 0 000-1.3L14 2M9 22H4m9-9h.8a2 2 0 011.7.9l.99 1.57A2 2 0 0019 17h3M6 13H2" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'BMX', 
+      type: 'bmx',
+      color: 'sky', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 21a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm14 0a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM7 9l2-3m4 5l-4-5h6m3 5l2-3" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Training', 
+      type: 'training',
+      color: 'orange', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 6a2 2 0 1 0 4 0 2 2 0 0 0-4 0zm8 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM7 14l3-3M14 14l3-3M8 21v-1a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1M3 10v1a2 2 0 0 0 2 2h2m12-3v1a2 2 0 0 1-2 2h-2" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Cultural Hub', 
+      type: 'cultural_hub',
+      color: 'amber', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 3v8a5 5 0 0 0 5 5h8a5 5 0 0 0 5-5V8a5 5 0 0 0-5-5h-5M7 21v-7m10 7v-4" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Basketball', 
+      type: 'basketball',
+      color: 'orange', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2v20M2 12h20M3.63 18.37l16.74-16.74M3.63 5.63l16.74 16.74M2 12a10 10 0 0 0 10 10M12 2a10 10 0 0 0 10 10" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Climbing', 
+      type: 'climbing',
+      color: 'red', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M7 21l1.6-6M8.5 9.5L10 14M12 2l1.9 5.7M16.5 22l-.9-6.1M13.1 7.8l1.9 2.9M18 10l.8-3M6.2 11.2l4.3-.5" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    },
+    { 
+      name: 'Others', 
+      type: 'others',
+      color: 'indigo', 
+      icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 8v.01M12 12v.01M12 16v.01M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" 
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" stroke="currentColor" />
+            </svg>
+    }
+  ];
+  
+  // Filter button component for category filtering
+  const FilterButton = ({ active, color, icon, label, onClick }: {
+    active: boolean;
+    color: string;
+    icon: React.ReactNode;
+    label: string;
+    onClick: () => void;
+  }) => {
+    // Map the color to their Tailwind classes for both background and hover
+    const getButtonColors = (colorName: string, isActive: boolean) => {
+      const colorMap: Record<string, { bg: string, hover: string, textDark: string }> = {
+        red: { bg: 'bg-red-500', hover: 'hover:bg-red-600', textDark: 'text-red-500/90' },
+        blue: { bg: 'bg-blue-500', hover: 'hover:bg-blue-600', textDark: 'text-blue-500/90' },
+        green: { bg: 'bg-green-500', hover: 'hover:bg-green-600', textDark: 'text-green-500/90' },
+        yellow: { bg: 'bg-yellow-500', hover: 'hover:bg-yellow-600', textDark: 'text-yellow-500/90' },
+        purple: { bg: 'bg-purple-500', hover: 'hover:bg-purple-600', textDark: 'text-purple-500/90' },
+        pink: { bg: 'bg-pink-500', hover: 'hover:bg-pink-600', textDark: 'text-pink-500/90' },
+        indigo: { bg: 'bg-indigo-500', hover: 'hover:bg-indigo-600', textDark: 'text-indigo-500/90' },
+        orange: { bg: 'bg-orange-500', hover: 'hover:bg-orange-600', textDark: 'text-orange-500/90' },
+        teal: { bg: 'bg-teal-500', hover: 'hover:bg-teal-600', textDark: 'text-teal-500/90' },
+        sky: { bg: 'bg-sky-400', hover: 'hover:bg-sky-500', textDark: 'text-sky-400/90' },
+        amber: { bg: 'bg-amber-600', hover: 'hover:bg-amber-700', textDark: 'text-amber-600/90' },
+        gray: { bg: 'bg-gray-500', hover: 'hover:bg-gray-600', textDark: 'text-gray-500/90' },
+      };
+      
+      const colorStyle = colorMap[colorName] || colorMap.gray;
+      
+      if (isActive) {
+        return `${colorStyle.bg} text-white ${colorStyle.hover}`;
+      } else {
+        return isDarkMode
+          ? `bg-gray-700 text-gray-300 hover:${colorStyle.bg} hover:text-white/90`
+          : `bg-gray-100 hover:bg-gray-200 ${colorStyle.textDark} hover:${colorStyle.textDark}`;
+      }
+    };
+    
+    return (
+      <button
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${getButtonColors(color, active)}`}
+        onClick={onClick}
+      >
+        <span className="flex-shrink-0">{icon}</span>
+        <span>{label}</span>
+      </button>
+    );
+  };
+
+  // Helper function to handle filter selection
+  const handleFilterClick = (type: string) => {
+    if (type === 'all') {
+      // If All is clicked, either clear filters or set to All
+      setActiveFilters([]);
+    } else {
+      // Toggle the selected filter
+      const newFilters = activeFilters.includes(type)
+        ? activeFilters.filter(t => t !== type)
+        : [...activeFilters, type];
+      
+      setActiveFilters(newFilters);
+    }
+  };
+
+  return (
+    <div className="relative h-full">
+      {/* Enhanced Search Bar for Dance Battles */}
+      <div className="absolute top-4 left-0 right-0 px-4 sm:px-6 z-10">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="relative rounded-full shadow-2xl flex items-center p-1 sm:p-2 transition-all duration-300 max-w-3xl mx-auto overflow-hidden"
+          style={{
+            background: isDarkMode 
+              ? 'linear-gradient(135deg, rgba(114, 9, 183, 0.9) 0%, rgba(58, 12, 163, 0.9) 100%)'
+              : 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%)',
+            backdropFilter: 'blur(10px)',
+            border: '2px solid rgba(247, 37, 133, 0.3)',
+            boxShadow: '0 8px 32px rgba(247, 37, 133, 0.3), 0 0 80px rgba(114, 9, 183, 0.2)'
+          }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer" 
+               style={{ animation: 'shimmer 3s infinite' }} />
+          
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`h-5 w-5 sm:h-6 sm:w-6 ${isDarkMode ? 'text-pink-300' : 'text-purple-600'} ml-3 z-10`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          
+          <Input
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setSearchQuery(e.target.value);
+            }}
+            disabled={!ready}
+            placeholder="Find dance battles near you..."
+            className={`w-full bg-transparent border-none focus:outline-none focus-visible:ring-0 p-2 sm:p-3 text-sm sm:text-base font-medium z-10 ${isDarkMode ? 'text-white placeholder:text-pink-200/70' : 'text-gray-800 placeholder:text-purple-400/70'}`}
+          />
+          
+          <Button
+            className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white p-2 sm:p-3 rounded-full shadow-lg hover:shadow-xl transition-all z-10 hover:scale-110"
+            onClick={handleGetCurrentLocation}
+            aria-label="Get current location"
+            size="sm"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 sm:h-6 sm:w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          </Button>
+        </motion.div>
+        
+        {/* Search Results Dropdown */}
+        {status === "OK" && (
+          <div className={`mt-2 rounded-lg shadow-lg overflow-hidden ${isDarkMode ? 'bg-gray-700 text-white' : 'bg-white'} max-h-60 overflow-y-auto z-20 max-w-3xl mx-auto`}>
+            {data.map(({ description, place_id }) => (
+              <div
+                key={place_id}
+                onClick={() => handleSelect(description)}
+                className={`p-2 sm:p-3 cursor-pointer hover:bg-opacity-10 ${isDarkMode ? 'hover:bg-white' : 'hover:bg-gray-100'}`}
+              >
+                <p className="text-xs sm:text-sm">{description}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+
+      {/* The Google Map Component */}
+      <GoogleMap
+        mapContainerStyle={mapContainerStyle}
+        center={mapCenter}
+        zoom={mapZoom}
+        options={{
+          ...mapOptions,
+          styles: isDarkMode ? darkModeStyles : undefined,
+        }}
+        onLoad={onMapLoad}
+      >
+        {/* Fallback battle markers */}
+        {!window.google?.maps?.marker?.AdvancedMarkerElement && events && Array.isArray(events) &&
+          events
+            .filter((event: any) => event.latitude && event.longitude)
+            .map((event: any) => (
+              <Marker
+                key={`battle-${event.id}`}
+                position={{
+                  lat: parseFloat(event.latitude),
+                  lng: parseFloat(event.longitude),
+                }}
+                onClick={() => {
+                  setSelectedBattle(event);
+                  setSelectedMarker(null);
+                }}
+                icon={{
+                  url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                    <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">
+                      <defs>
+                        <linearGradient id="battleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" style="stop-color:#FF6B35;stop-opacity:1" />
+                          <stop offset="35%" style="stop-color:#F72585;stop-opacity:1" />
+                          <stop offset="70%" style="stop-color:#7209B7;stop-opacity:1" />
+                          <stop offset="100%" style="stop-color:#3A0CA3;stop-opacity:1" />
+                        </linearGradient>
+                        <filter id="glow">
+                          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                          <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                          </feMerge>
+                        </filter>
+                      </defs>
+                      <circle cx="30" cy="30" r="26" fill="url(#battleGrad)" stroke="white" stroke-width="4" filter="url(#glow)"/>
+                      <g transform="translate(15, 15)">
+                        <circle cx="9" cy="4" r="2" fill="white"/>
+                        <path d="M16.5 17.5c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5zm-9 0C6.12 17.5 5 18.62 5 20s1.12 2.5 2.5 2.5S10 21.38 10 20s-1.12-2.5-2.5-2.5zM6 8l2.5 4 3-1.5L13 15l2-1.5-1.5-4.5L17 7l-1.5-1.5L12 7 10 5.5 6 8z" fill="white"/>
+                      </g>
+                    </svg>
+                  `),
+                  scaledSize: new google.maps.Size(60, 60),
+                  anchor: new google.maps.Point(30, 30),
+                }}
+                animation={google.maps.Animation.DROP}
+              />
+            ))
+        }
+        
+        {/* Advanced markers are created through JavaScript directly, not through React components */}
+        {/* They're created and managed in the useEffect hook with advancedMarkers state */}
+
+        {/* User's current location marker - use standard marker as fallback */}
+        {userLocation && !window.google?.maps?.marker?.AdvancedMarkerElement && (
+          <Marker
+            position={userLocation}
+            icon={{
+              url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+              scaledSize: new google.maps.Size(50, 50),
+            }}
+          />
+        )}
+
+        {/* Info Window for Battle */}
+        {selectedBattle && (
+          <InfoWindow
+            position={{
+              lat: parseFloat(selectedBattle.latitude),
+              lng: parseFloat(selectedBattle.longitude),
+            }}
+            onCloseClick={() => setSelectedBattle(null)}
+          >
+            <div className="p-3 max-w-sm">
+              <h3 className="font-bold text-gray-900 text-lg mb-1">{selectedBattle.title}</h3>
+              <Badge className="bg-gradient-to-r from-primary to-accent text-white mb-2">
+                Battle Event
+              </Badge>
+              
+              <div className="space-y-2 text-sm">
+                <p className="text-gray-600">{selectedBattle.description}</p>
+                <div className="flex items-center text-gray-700">
+                  <svg className="h-4 w-4 mr-2 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {new Date(selectedBattle.date).toLocaleDateString()}
+                </div>
+                <div className="flex items-center text-gray-700">
+                  <svg className="h-4 w-4 mr-2 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  </svg>
+                  {selectedBattle.location}
+                </div>
+              </div>
+              
+              <Button 
+                size="sm" 
+                className="w-full mt-3 font-semibold" 
+                onClick={() => window.location.href = `/events/${selectedBattle.id}`}
+              >
+                View Battle Details
+              </Button>
+            </div>
+          </InfoWindow>
+        )}
+
+        {/* Enhanced Info Window for selected marker */}
+        {selectedMarker && (
+          <InfoWindow
+            position={{
+              lat: parseFloat(selectedMarker.latitude),
+              lng: parseFloat(selectedMarker.longitude),
+            }}
+            onCloseClick={() => setSelectedMarker(null)}
+          >
+            <div className="p-2 max-w-xs">
+              <h3 className="font-bold text-gray-900">{selectedMarker.name}</h3>
+              <Badge className={`${getLocationTypeBadgeColor(selectedMarker.type)} text-white mt-1 mb-2`}>
+                {getLocationTypeLabel(selectedMarker.type)}
+              </Badge>
+              
+              {/* Quick info about the location */}
+              <div className="mb-2 space-y-1">
+                <p className="text-sm text-gray-600 line-clamp-2">
+                  {selectedMarker.description || "No description available"}
+                </p>
+                
+                {/* Show key details if available */}
+                {selectedMarker.openingHours && (
+                  <p className="text-xs text-gray-500 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {selectedMarker.openingHours}
+                  </p>
+                )}
+                
+                {selectedMarker.skillLevel && (
+                  <p className="text-xs text-gray-500 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Skill level: {selectedMarker.skillLevel}
+                  </p>
+                )}
+                
+                {/* Show pricing info */}
+                <p className="text-xs text-gray-500 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {selectedMarker.isFree ? "Free access" : "Paid access"}
+                </p>
+              </div>
+              
+              <div className="flex justify-between">
+                <Button 
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    onLocationClick(selectedMarker);
+                    setSelectedMarker(null);
+                  }}
+                >
+                  View Details
+                </Button>
+                <Button 
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    window.open(
+                      `https://www.google.com/maps/dir/?api=1&destination=${selectedMarker.latitude},${selectedMarker.longitude}`,
+                      "_blank"
+                    );
+                  }}
+                >
+                  Directions
+                </Button>
+              </div>
+            </div>
+          </InfoWindow>
+        )}
+      </GoogleMap>
+
+      {/* Add Location Button */}
+      <motion.div
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        className="absolute bottom-4 sm:bottom-6 right-4 sm:right-6 z-10"
+      >
+        <Button
+          className="bg-primary text-white p-3 sm:p-4 rounded-full shadow-lg"
+          onClick={onAddLocation}
+          aria-label="Add new location"
+          size="icon"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 sm:h-6 sm:w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+        </Button>
+      </motion.div>
+      
+      {/* Refresh Button */}
+      <motion.div
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        className="absolute bottom-4 sm:bottom-6 right-16 sm:right-20 z-10"
+      >
+        <Button
+          className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white'} text-primary p-3 sm:p-4 rounded-full shadow-lg`}
+          onClick={() => {
+            // Show loading toast
+            toast({
+              title: "Refreshing map data",
+              description: "Getting the latest locations...",
+            });
+            
+            // Use the imported queryClient to manually refetch locations
+            queryClient.refetchQueries({ queryKey: ['/api/locations'] })
+              .then(() => {
+                toast({
+                  title: "Map refreshed",
+                  description: "Latest locations loaded successfully",
+                  variant: "default",
+                });
+              })
+              .catch((error: Error) => {
+                console.error("Error refreshing locations:", error);
+                toast({
+                  title: "Refresh failed",
+                  description: "Could not reload locations. Please try again.",
+                  variant: "destructive",
+                });
+              });
+          }}
+          aria-label="Refresh map data"
+          size="icon"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 sm:h-6 sm:w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+        </Button>
+      </motion.div>
+
+      {/* Filter Toggle Button */}
+      <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 z-20">
+        <Button 
+          size="sm"
+          variant={showFilterPanel ? "default" : "outline"}
+          className={`${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white'} shadow-md flex items-center gap-1 sm:gap-2 text-xs sm:text-sm p-2 sm:px-3`}
+          onClick={() => setShowFilterPanel(!showFilterPanel)}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="hidden sm:block">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sm:hidden">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          <span className="hidden sm:inline">Filters</span>
+          {activeFilters.length > 0 && (
+            <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center text-[10px] sm:text-xs">
+              {activeFilters.length}
+            </span>
+          )}
+        </Button>
+      </div>
+      
+      {/* Filter Controls Panel */}
+      <motion.div 
+        className="absolute bottom-16 sm:bottom-20 left-4 sm:left-6 z-10"
+        initial={{ x: -300, opacity: 0 }}
+        animate={{ 
+          x: showFilterPanel ? 0 : -300,
+          opacity: showFilterPanel ? 1 : 0
+        }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
+        ref={filterPanelRef}
+        style={{ display: showFilterPanel ? 'block' : 'none' }}
+      >
+        <div className={`p-2 sm:p-3 rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-800/90' : 'bg-white/95'} backdrop-blur-sm max-w-[280px] sm:max-w-xs text-sm`}>
+          <div className="flex justify-between items-center mb-2">
+            <h3 className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Filter By Category</h3>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              className={`h-6 w-6 p-0 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}
+              onClick={() => {
+                setActiveFilters([]);
+                toast({
+                  title: "Filters Cleared",
+                  description: "Showing all locations on the map",
+                });
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6L6 18"></path>
+                <path d="M6 6l12 12"></path>
+              </svg>
+            </Button>
+          </div>
+          
+          <div className="space-y-2">
+            {/* Urban Art & Performance Categories */}
+            <div>
+              <h4 className={`text-xs font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} mb-1`}>Urban Art & Performance</h4>
+              <div className="flex flex-wrap gap-1">
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('graffiti') 
+                    ? 'bg-red-500 hover:bg-red-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-red-500/70' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('graffiti')
+                      ? activeFilters.filter(f => f !== 'graffiti')
+                      : [...activeFilters, 'graffiti'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Graffiti
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('dance') 
+                    ? 'bg-blue-500 hover:bg-blue-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-blue-500/70' : 'bg-gray-200 text-gray-700 hover:bg-blue-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('dance')
+                      ? activeFilters.filter(f => f !== 'dance')
+                      : [...activeFilters, 'dance'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Dance
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('music') 
+                    ? 'bg-purple-500 hover:bg-purple-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-purple-500/70' : 'bg-gray-200 text-gray-700 hover:bg-purple-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('music')
+                      ? activeFilters.filter(f => f !== 'music')
+                      : [...activeFilters, 'music'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Music
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('rap') 
+                    ? 'bg-pink-500 hover:bg-pink-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-pink-500/70' : 'bg-gray-200 text-gray-700 hover:bg-pink-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('rap')
+                      ? activeFilters.filter(f => f !== 'rap')
+                      : [...activeFilters, 'rap'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Rap
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('performance') 
+                    ? 'bg-teal-500 hover:bg-teal-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-teal-500/70' : 'bg-gray-200 text-gray-700 hover:bg-teal-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('performance')
+                      ? activeFilters.filter(f => f !== 'performance')
+                      : [...activeFilters, 'performance'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Performance
+                </Badge>
+              </div>
+            </div>
+            
+            {/* Urban Sports & Training Categories */}
+            <div>
+              <h4 className={`text-xs font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} mb-1`}>Urban Sports</h4>
+              <div className="flex flex-wrap gap-1">
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('skate') 
+                    ? 'bg-green-500 hover:bg-green-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-green-500/70' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('skate')
+                      ? activeFilters.filter(f => f !== 'skate')
+                      : [...activeFilters, 'skate'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Skate
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('parkour') 
+                    ? 'bg-yellow-500 hover:bg-yellow-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-yellow-500/70' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('parkour')
+                      ? activeFilters.filter(f => f !== 'parkour')
+                      : [...activeFilters, 'parkour'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Parkour
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('training') 
+                    ? 'bg-orange-500 hover:bg-orange-600' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-orange-500/70' : 'bg-gray-200 text-gray-700 hover:bg-orange-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('training')
+                      ? activeFilters.filter(f => f !== 'training')
+                      : [...activeFilters, 'training'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Training
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('bmx') 
+                    ? 'bg-sky-400 hover:bg-sky-500' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-sky-400/70' : 'bg-gray-200 text-gray-700 hover:bg-sky-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('bmx')
+                      ? activeFilters.filter(f => f !== 'bmx')
+                      : [...activeFilters, 'bmx'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  BMX
+                </Badge>
+              </div>
+            </div>
+            
+            {/* Community Spaces */}
+            <div>
+              <h4 className={`text-xs font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} mb-1`}>Community Spaces</h4>
+              <div className="flex flex-wrap gap-1">
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('cultural_hub') 
+                    ? 'bg-amber-700 hover:bg-amber-800' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-amber-700/70' : 'bg-gray-200 text-gray-700 hover:bg-amber-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('cultural_hub')
+                      ? activeFilters.filter(f => f !== 'cultural_hub')
+                      : [...activeFilters, 'cultural_hub'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Cultural Hub
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('open_mic') 
+                    ? 'bg-pink-400 hover:bg-pink-500' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-pink-400/70' : 'bg-gray-200 text-gray-700 hover:bg-pink-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('open_mic')
+                      ? activeFilters.filter(f => f !== 'open_mic')
+                      : [...activeFilters, 'open_mic'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Open Mic
+                </Badge>
+                <Badge 
+                  className={`cursor-pointer transition-all ${activeFilters.includes('workshop') 
+                    ? 'bg-indigo-700 hover:bg-indigo-800' 
+                    : isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-indigo-700/70' : 'bg-gray-200 text-gray-700 hover:bg-indigo-200'}`} 
+                  onClick={() => {
+                    const newFilters = activeFilters.includes('workshop')
+                      ? activeFilters.filter(f => f !== 'workshop')
+                      : [...activeFilters, 'workshop'];
+                    setActiveFilters(newFilters);
+                  }}
+                >
+                  Workshop
+                </Badge>
+              </div>
+            </div>
+          </div>
+          
+          {/* Status Indicator & Count */}
+          <div className="mt-3 flex justify-between items-center">
+            <div className="flex items-center">
+              <div className={`w-2 h-2 rounded-full ${activeFilters.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-400'} mr-1`}></div>
+              <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                {activeFilters.length > 0 
+                  ? `${activeFilters.length} filter${activeFilters.length > 1 ? 's' : ''} active` 
+                  : 'No filters active'}
+              </span>
+            </div>
+            <span className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              {filteredLocations.length} location{filteredLocations.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+export default GoogleMapView;

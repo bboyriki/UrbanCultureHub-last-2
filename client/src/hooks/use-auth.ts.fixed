@@ -1,0 +1,136 @@
+import { useState, useEffect, createContext, useContext } from "react";
+import { User } from "@shared/schema";
+import axios from "axios";
+
+// Define the auth context type
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  error: string | null;
+  firebaseUser: any | null;
+}
+
+// Create the auth context
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  error: null,
+  firebaseUser: null,
+});
+
+// Provider component props type
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
+
+// Provider component that wraps your app and provides the auth context
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Effect to fetch the current user when the component mounts
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        // Check if we're already authenticated with Firebase
+        if (window.firebase?.auth && window.firebase.auth().currentUser) {
+          const fbUser = window.firebase.auth().currentUser;
+          setFirebaseUser(fbUser);
+          
+          // Get the user data from our API
+          const { data } = await axios.get(`/api/users/firebase/${fbUser.uid}`);
+          if (data) {
+            setUser(data);
+            console.log("User profile loaded:", data);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch user:", err);
+        setError("Failed to authenticate user");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Initialize Firebase auth state listener
+    const initFirebaseAuth = () => {
+      if (window.firebase?.auth) {
+        window.firebase.auth().onAuthStateChanged(async (fbUser) => {
+          setLoading(true);
+          
+          if (fbUser) {
+            console.log("Firebase auth detected user:", fbUser.uid);
+            setFirebaseUser(fbUser);
+            
+            try {
+              // Get the user data from our API
+              const { data } = await axios.get(`/api/users/firebase/${fbUser.uid}`);
+              if (data) {
+                setUser(data);
+                console.log("User profile loaded:", data);
+              } else {
+                // Handle case where Firebase user exists but no corresponding DB user
+                setUser(null);
+              }
+            } catch (err) {
+              console.error("Failed to fetch user profile:", err);
+              setError("Failed to load user profile");
+              setUser(null);
+            }
+          } else {
+            setUser(null);
+            setFirebaseUser(null);
+          }
+          
+          setLoading(false);
+          
+          if (fbUser) {
+            console.log("Auth ready, initializing WebSocket connection");
+            // Additional initialization that requires auth can go here
+          }
+        });
+      } else {
+        setLoading(false);
+      }
+    };
+
+    initFirebaseAuth();
+  }, []);
+
+  // Context provider value
+  const contextValue = {
+    user,
+    loading,
+    error,
+    firebaseUser,
+  };
+
+  // We need to return JSX, but since this is a .ts file,
+  // TypeScript will complain. We'll cast it as any to bypass
+  // the TypeScript error.
+  return (
+    AuthContext.Provider({
+      value: contextValue,
+      children
+    }) as any
+  );
+}
+
+// Custom hook to use the auth context
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+// Declare Firebase on the window object for TypeScript
+declare global {
+  interface Window {
+    firebase?: {
+      auth: () => {
+        onAuthStateChanged: (callback: (user: any) => void) => void;
+        currentUser: any;
+      };
+    };
+  }
+}

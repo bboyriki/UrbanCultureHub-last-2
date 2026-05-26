@@ -1,0 +1,399 @@
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Pencil, Trash, AlertCircle, MoreVertical, User } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
+import { useLocation } from "wouter";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+interface ManagementButtonsProps {
+  canManage: boolean;
+  contentId: number;
+  contentType: 'service' | 'product' | 'post' | 'comment' | 'event' | 'location';
+  onEdit?: () => void;
+  queryKeys?: string[];
+  compact?: boolean;
+  className?: string;
+  authorId?: number;
+  showViewProfile?: boolean;
+}
+
+/**
+ * A dropdown menu with options for content including view profile, edit and delete
+ */
+export function ContentManagementMenu({ 
+  canManage, 
+  contentId, 
+  contentType, 
+  onEdit,
+  queryKeys = [], 
+  className = "",
+  authorId,
+  showViewProfile = true
+}: ManagementButtonsProps) {
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [, navigate] = useLocation();
+  
+  // Create API endpoint path based on content type
+  const getEndpoint = () => {
+    switch (contentType) {
+      case 'service':
+        return `/api/services/${contentId}`;
+      case 'product':
+        return `/api/products/${contentId}`;  
+      case 'post':
+        return `/api/posts/${contentId}`;
+      case 'comment':
+        return `/api/comments/${contentId}`;
+      case 'event':
+        return `/api/events/${contentId}`;
+      case 'location':
+        return `/api/locations/${contentId}`;
+      default:
+        return '';
+    }
+  };
+  
+  const handleDelete = async () => {
+    try {
+      // Get current user from global context
+      const user = window.__URBAN_CULTURE_USER__;
+      
+      // Include auth data in headers for robust permission checking
+      const config = {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': user?.id?.toString() || '',
+          'X-User-Role': user?.role || '',
+        },
+        withCredentials: true,
+        params: {
+          userId: user?.id,
+          userRole: user?.role,
+        }
+      };
+      
+      // Log data for debugging
+      console.log(`Deleting ${contentType} with auth data:`, {
+        contentId: contentId,
+        userId: user?.id,
+        userRole: user?.role,
+        endpoint: getEndpoint()
+      });
+      
+      const response = await apiRequest(getEndpoint(), "DELETE", config);
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || `Failed to delete ${contentType}`);
+      }
+      
+      toast({
+        title: `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} deleted`,
+        description: `The ${contentType} has been successfully deleted`,
+      });
+      
+      // Invalidate relevant queries to refresh data
+      if (queryKeys.length > 0) {
+        queryKeys.forEach(key => {
+          queryClient.invalidateQueries({ queryKey: [key] });
+        });
+      }
+    } catch (error) {
+      console.error(`Error deleting ${contentType}:`, error);
+      toast({
+        title: `Failed to delete ${contentType}`,
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Only show the menu if user can manage or view profile is enabled
+  const showMenu = canManage || (showViewProfile && authorId);
+  
+  // For detailed debugging
+  console.log("ContentManagementMenu debug:", { 
+    canManage, 
+    contentId, 
+    contentType, 
+    authorId, 
+    showViewProfile,
+    showMenu,
+    shouldShowViewProfile: Boolean(showViewProfile && authorId),
+    authorIdType: typeof authorId,
+    authorIdValue: authorId
+  });
+
+  if (!showMenu) return null;
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className={className}>
+            <MoreVertical className="h-4 w-4" />
+            <span className="sr-only">Actions</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {/* View Profile option available for everyone */}
+          {showViewProfile && authorId ? (
+            <DropdownMenuItem onClick={() => navigate(`/profile/${authorId}`)}>
+              <User className="mr-2 h-4 w-4" />
+              View Profile
+            </DropdownMenuItem>
+          ) : (
+            // Add logging when the View Profile option isn't shown
+            showViewProfile ? <>{console.log("View Profile not shown:", { authorId, showViewProfile })}</> : null
+          )}
+          
+          {/* Edit and Delete options only for content owners/admins */}
+          {canManage && (
+            <>
+              {showViewProfile && authorId !== undefined && authorId !== null && <DropdownMenuSeparator />}
+              
+              {onEdit && (
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+              )}
+              
+              <DropdownMenuItem 
+                onClick={() => setIsDeleteDialogOpen(true)}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <Trash className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this {contentType}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/**
+ * Buttons for editing and deleting content
+ */
+export function ContentManagementButtons({ 
+  canManage, 
+  contentId, 
+  contentType, 
+  onEdit,
+  queryKeys = [],
+  compact = false,
+  className = ""
+}: ManagementButtonsProps) {
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  
+  if (!canManage) return null;
+  
+  // Create API endpoint path based on content type
+  const getEndpoint = () => {
+    switch (contentType) {
+      case 'service':
+        return `/api/services/${contentId}`;
+      case 'product':
+        return `/api/products/${contentId}`;  
+      case 'post':
+        return `/api/posts/${contentId}`;
+      case 'comment':
+        return `/api/comments/${contentId}`;
+      case 'event':
+        return `/api/events/${contentId}`;
+      case 'location':
+        return `/api/locations/${contentId}`;
+      default:
+        return '';
+    }
+  };
+  
+  const handleDelete = async () => {
+    try {
+      // Get current user from global context
+      const user = window.__URBAN_CULTURE_USER__;
+      
+      // Include auth data in headers for robust permission checking
+      const config = {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': user?.id?.toString() || '',
+          'X-User-Role': user?.role || '',
+        },
+        withCredentials: true,
+        params: {
+          userId: user?.id,
+          userRole: user?.role,
+        }
+      };
+      
+      // Log data for debugging
+      console.log(`Deleting ${contentType} with auth data:`, {
+        contentId: contentId,
+        userId: user?.id,
+        userRole: user?.role,
+        endpoint: getEndpoint()
+      });
+      
+      const response = await apiRequest(getEndpoint(), "DELETE", config);
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || `Failed to delete ${contentType}`);
+      }
+      
+      toast({
+        title: `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} deleted`,
+        description: `The ${contentType} has been successfully deleted`,
+      });
+      
+      // Invalidate relevant queries to refresh data
+      if (queryKeys.length > 0) {
+        queryKeys.forEach(key => {
+          queryClient.invalidateQueries({ queryKey: [key] });
+        });
+      }
+    } catch (error) {
+      console.error(`Error deleting ${contentType}:`, error);
+      toast({
+        title: `Failed to delete ${contentType}`,
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  if (compact) {
+    return (
+      <div className={`flex gap-2 ${className}`}>
+        {onEdit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onEdit}
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="sr-only">Edit</span>
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsDeleteDialogOpen(true)}
+          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          title="Delete"
+        >
+          <Trash className="h-4 w-4" />
+          <span className="sr-only">Delete</span>
+        </Button>
+        
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this {contentType}. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleDelete}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
+  
+  return (
+    <div className={`flex gap-2 ${className}`}>
+      {onEdit && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onEdit}
+          className="flex items-center gap-1"
+        >
+          <Pencil className="h-4 w-4" />
+          Edit
+        </Button>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsDeleteDialogOpen(true)}
+        className="flex items-center gap-1 border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50"
+      >
+        <Trash className="h-4 w-4" />
+        Delete
+      </Button>
+      
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this {contentType}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

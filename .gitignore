@@ -1,0 +1,29 @@
+node_modules
+dist
+client/dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.env
+.env.local
+.env.production
+.env.production.local
+.env.development
+.env.development.local
+.env*.local
+
+# Replit internal folders — never commit these
+.config/
+.agents/
+.cache/
+.upm/
+.replit
+replit.nix
+server/data/city_spots_cache.json
+
+# Large asset folders — use Git LFS or external storage instead
+attached_assets/
+uploads/
+
+.local/

@@ -1,0 +1,37 @@
+# ── Build artifacts ──────────────────────────────────────────
+node_modules
+dist
+.env
+.env.*
+
+# ── Replit-specific files ─────────────────────────────────────
+.replit
+replit.nix
+.cache
+.config
+
+# ── Replit canvas (not needed in image) ──────────────────────
+.canvas
+
+# ── Test & debug scripts ──────────────────────────────────────
+test-*.js
+fix_routes.js
+fixed_routes.ts
+scripts/seed-more-funding.mjs
+
+# ── Dev/documentation files ───────────────────────────────────
+*.md
+!README.md
+
+# ── Git history ───────────────────────────────────────────────
+.git
+.gitignore
+
+# ── macOS junk ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE configs ───────────────────────────────────────────────
+.vscode
+.idea
+*.code-workspace
