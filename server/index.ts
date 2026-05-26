@@ -25,6 +25,10 @@ import { startEventScheduler } from './eventScheduler';
 import { startLinkedInAutoPostScheduler } from './linkedinAutoPost';
 import { startInstagramAutomationScheduler } from './instagramAutomationScheduler';
 import { recordRequest } from './perfTracker';
+import { logEnvironment } from './env';
+
+// Log which environment is active at startup
+logEnvironment();
 
 // Ensure KVK API uses v1 endpoint
 if (process.env.KVK_API_URL && process.env.KVK_API_URL.includes('/v2/')) {
