@@ -438,6 +438,7 @@ const AdminAiAppContentPage     = lazyWithRetry(() => import("@/pages/admin/ai-a
 const AdminTikTokPage           = lazyWithRetry(() => import("@/pages/admin/tiktok"));
 const AdminInstagramPage        = lazyWithRetry(() => import("@/pages/admin/instagram"));
 const AdminSnapchatPage         = lazyWithRetry(() => import("@/pages/admin/snapchat"));
+const AdminLinkedInPage         = lazyWithRetry(() => import("@/pages/admin/linkedin"));
 const AdminLeadExportPage       = lazyWithRetry(() => import("@/pages/admin/lead-export"));
 const AdminPushPage             = lazyWithRetry(() => import("@/components/admin/AdminPushNotifications"));
 const AdminApiKeysPage          = lazyWithRetry(() => import("@/pages/admin/api-keys"));
@@ -1262,6 +1263,10 @@ function App() {
 
                       <Route path="/admin/ai-app-content">
                         {() => <AdminLayout><AdminAiAppContentPage /></AdminLayout>}
+                      </Route>
+
+                      <Route path="/admin/linkedin">
+                        {() => <AdminLayout><AdminLinkedInPage /></AdminLayout>}
                       </Route>
 
                       <Route path="/admin/tiktok">

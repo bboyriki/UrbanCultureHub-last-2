@@ -13,7 +13,7 @@ import {
   Briefcase, Download, Clapperboard, Scissors, CalendarCheck, Bot, Mail, Settings,
   Home, ArrowLeft, Layers
 } from "lucide-react";
-import { SiTiktok, SiInstagram, SiSnapchat } from "react-icons/si";
+import { SiTiktok, SiInstagram, SiSnapchat, SiLinkedin } from "react-icons/si";
 import AiQuickAccess from "./AiQuickAccess";
 
 type NavItem = { label: string; icon: React.ElementType; path: string; exact?: boolean };
@@ -85,6 +85,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Social",
     items: [
+      { label: "LinkedIn", icon: SiLinkedin, path: "/admin/linkedin" },
       { label: "TikTok Integration", icon: SiTiktok, path: "/admin/tiktok" },
       { label: "Instagram", icon: SiInstagram, path: "/admin/instagram" },
       { label: "Snapchat Business", icon: SiSnapchat, path: "/admin/snapchat" },

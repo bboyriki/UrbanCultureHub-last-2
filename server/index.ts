@@ -518,8 +518,13 @@ async function initStripe() {
   }
   try {
     log('Initializing Stripe schema…');
-    await runMigrations({ databaseUrl });
-    log('Stripe schema ready');
+    try {
+      await runMigrations({ databaseUrl });
+      log('Stripe schema ready');
+    } catch (migrateErr: any) {
+      // stripe-replit-sync may not work outside Replit — safe to skip
+      log(`Stripe schema migration skipped: ${migrateErr?.message || migrateErr}`, 'warn');
+    }
 
     const stripeSync = await getStripeSync();
 
