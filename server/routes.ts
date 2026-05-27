@@ -75,11 +75,11 @@ const LOCKOUT_MAX_FAILURES = 5;
 const LOCKOUT_WINDOW_MS    = 15 * 60 * 1000;  // 15 min
 const LOCKOUT_DURATION_MS  = 15 * 60 * 1000;  // 15 min
 
-// Emails that are NEVER subject to IP lockout (super admins)
-const LOCKOUT_EXEMPT_EMAILS = new Set<string>([
-  "oudaialmouti@gmail.com",
-  "rmaru2889@gmail.com",
-]);
+// Emails that are NEVER subject to IP lockout — loaded from env, never hardcoded
+const LOCKOUT_EXEMPT_EMAILS = new Set<string>(
+  (process.env.ADMIN_EXEMPT_EMAILS || "oudaialmouti@gmail.com,rmaru2889@gmail.com")
+    .split(",").map(e => e.trim()).filter(Boolean)
+);
 
 interface FailureRecord { count: number; firstAt: number; lockedUntil: number | null }
 const loginFailures = new Map<string, FailureRecord>();
@@ -288,65 +288,41 @@ async function getCurrentUser(req: Request) {
         // Firebase tokens are JWT and quite long, typically 500+ characters
         if (token.length > 100) {
           try {
-            // For debugging, log token length
-            console.log(`Received token of length ${token.length}`);
-            
             // Try to decode base64 sections of the JWT to extract the payload
             // JWT format is header.payload.signature
             const tokenParts = token.split('.');
             if (tokenParts.length === 3) {
-              // Try to decode the payload (middle part)
               const payloadBase64 = tokenParts[1];
-              // Make base64 URL safe by replacing chars and adding padding
               const base64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
               const padding = '='.repeat((4 - base64.length % 4) % 4);
               const paddedBase64 = base64 + padding;
-              
+
               try {
-                // Decode the payload
                 const decodedPayload = Buffer.from(paddedBase64, 'base64').toString('utf8');
                 const payload = JSON.parse(decodedPayload);
-                
-                // Extract the sub (subject) field which contains the Firebase UID
+
                 if (payload && payload.sub) {
-                  console.log("Found Firebase UID in token:", payload.sub);
-                  
-                  // Look up the user by Firebase UID
                   const user = await storage.getUserByFirebaseUid(payload.sub);
-                  if (user) {
-                    console.log("Authenticated user via Firebase token:", user.id);
-                    return user;
-                  }
+                  if (user) return user;
                 } else if (payload && payload.user_id) {
-                  // Some Firebase tokens might use user_id instead of sub
-                  console.log("Found Firebase UID in token (user_id):", payload.user_id);
-                  
-                  // Look up the user by Firebase UID
                   const user = await storage.getUserByFirebaseUid(payload.user_id);
-                  if (user) {
-                    console.log("Authenticated user via Firebase token:", user.id);
-                    return user;
-                  }
+                  if (user) return user;
                 }
               } catch (decodeError) {
-                console.error("Error decoding token payload:", decodeError);
+                // Token decode failed — fall through
               }
             }
-            
+
             // Fallback: check if token contains a Firebase UID we have in database
             const users = await storage.getAllUsers();
             for (const user of users) {
               if (user.firebaseUid && token.includes(user.firebaseUid)) {
-                console.log("Authenticated user via Firebase token (fallback method):", user.id);
                 return user;
               }
             }
           } catch (tokenError) {
-            console.error("Error processing Firebase token:", tokenError);
+            // Token processing failed — fall through
           }
-          
-          // If we couldn't match a Firebase UID, we'll log it and fall through to other methods
-          console.log("Could not find matching user for provided Firebase token");
         } else {
           // Simple token format: "userId:role" (legacy)
           const [userIdStr, role] = token.split(':');
@@ -11312,7 +11288,7 @@ Return ONLY valid JSON, no markdown.`,
   // Test endpoint for sending emails
   app.get("/api/test/email/:type", async (req: Request, res: Response) => {
     const emailType = req.params.type as 'plain' | 'booking' | 'ticket' | 'order';
-    const recipientEmail = req.query.email as string || "oudaialmouti@gmail.com";
+    const recipientEmail = req.query.email as string || process.env.ADMIN_EMAIL || "";
     
     if (!recipientEmail) {
       return res.status(400).json({ 

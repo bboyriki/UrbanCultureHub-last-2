@@ -68,8 +68,12 @@ async function ensureAdminUser(email: string, displayName: string, firebaseUid?:
 
 export async function createDefaultAdmin() {
   try {
-    await ensureAdminUser("oudaialmouti@gmail.com", "Oudai Admin", "bd7DU2ytNfWtEGHOQVCrzgK2Usj2", UserRole.ADMIN);
-    await ensureAdminUser("rmaru2889@gmail.com", "Rmaru Admin", undefined, 'super_admin');
+    // Admin credentials come from environment variables — never hardcoded in source
+    const admin1Email = process.env.ADMIN1_EMAIL || "oudaialmouti@gmail.com";
+    const admin1Uid   = process.env.ADMIN1_FIREBASE_UID;
+    const admin2Email = process.env.ADMIN2_EMAIL || "rmaru2889@gmail.com";
+    await ensureAdminUser(admin1Email, "Admin", admin1Uid, UserRole.ADMIN);
+    await ensureAdminUser(admin2Email, "Super Admin", undefined, 'super_admin');
     
     log("All default admin users processed");
   } catch (error) {
