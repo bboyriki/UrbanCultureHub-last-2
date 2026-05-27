@@ -164,6 +164,7 @@
     },
     "@tootallnate/once": "3.0.1",
     "protobufjs": "7.5.8",
-    "@protobufjs/utf8": "1.1.1"
+    "@protobufjs/utf8": "1.1.1",
+    "get-tsconfig": "4.3.0"
   }
 }
