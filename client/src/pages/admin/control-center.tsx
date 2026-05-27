@@ -1,18 +1,11 @@
 /**
  * Control Center — real-time admin IDE
- *
- * Features:
- *   • Monaco Editor (loaded from CDN) with file browser + save
- *   • Live log stream via SSE  (/api/admin/control-center/stream)
- *   • Live app preview iframe
- *   • Error tracker (aggregated, deduplicated)
- *   • Security scanner (quick status + link to full report)
- *   • Performance metrics bar
+ * Features: Monaco Editor (CDN), live SSE logs, live preview, error tracker,
+ * security scanner, performance panel, quick commands + git panel.
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-// Monaco is loaded dynamically from CDN — declare globals
 declare global {
   interface Window {
     monaco: any;
@@ -22,85 +15,50 @@ declare global {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface LogEntry {
-  id: string;
-  ts: number;
-  level: "info" | "warn" | "error" | "debug";
-  source: string;
-  message: string;
+  id: string; ts: number; level: "info" | "warn" | "error" | "debug";
+  source: string; message: string;
 }
-
 interface ErrorEntry {
-  id: string;
-  ts: number;
-  message: string;
-  stack?: string;
-  count: number;
-  lastSeen: number;
-  route?: string;
+  id: string; ts: number; message: string; stack?: string;
+  count: number; lastSeen: number; route?: string;
 }
-
 interface FileNode {
-  name: string;
-  path: string;
-  type: "file" | "dir";
-  size?: number;
-  children?: FileNode[];
+  name: string; path: string; type: "file" | "dir";
+  size?: number; children?: FileNode[];
 }
-
 interface Metrics {
-  system: {
-    uptimeSec: number;
-    memHeapUsedMb: number;
-    memHeapTotalMb: number;
-    memPct: number;
-    nodeVersion: string;
-  };
-  endpoints: Array<{
-    endpoint: string;
-    count: number;
-    avgMs: number;
-    p95Ms: number;
-    maxMs: number;
-    errors: number;
-    errorRate: number;
-  }>;
+  system: { uptimeSec: number; memHeapUsedMb: number; memHeapTotalMb: number; memPct: number; memRssMb?: number; nodeVersion: string };
+  endpoints: Array<{ endpoint: string; count: number; avgMs: number; p95Ms: number; maxMs: number; errors: number; errorRate: number }>;
   recommendations: string[];
   sseClients: number;
 }
+interface CmdResult { id: string; label: string; output: string; exitCode: number; ts: number }
+interface GitInfo { branch: string; status: string | null; recentCommits: Array<{ hash: string; message: string }> }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
-  info:  "#60a5fa",
-  warn:  "#fbbf24",
-  error: "#f87171",
-  debug: "#9ca3af",
+  info: "#60a5fa", warn: "#fbbf24", error: "#f87171", debug: "#9ca3af",
 };
 
 function getLanguage(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    ts: "typescript", tsx: "typescript",
-    js: "javascript", jsx: "javascript",
-    json: "json", md: "markdown", css: "css",
-    html: "html", env: "ini", txt: "plaintext",
-    sql: "sql", sh: "shell", py: "python", cjs: "javascript",
+    ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
+    json: "json", md: "markdown", css: "css", html: "html",
+    env: "ini", txt: "plaintext", sql: "sql", sh: "shell", py: "python", cjs: "javascript",
   };
   return map[ext] || "plaintext";
 }
 
 function formatUptime(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
 
 function formatTs(ts: number): string {
-  return new Date(ts).toLocaleTimeString("en-US", {
-    hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
+  return new Date(ts).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function humanSize(bytes: number): string {
@@ -109,12 +67,20 @@ function humanSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
-// ── Chip component ─────────────────────────────────────────────────────────────
+function getFileIcon(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    ts: "🟦", tsx: "⚛️", js: "🟨", jsx: "⚛️", json: "📋",
+    md: "📝", css: "🎨", html: "🌐", env: "🔐", sh: "⚙️",
+  };
+  return map[ext] || "📄";
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 function Chip({ icon, label, value, warn = false }: { icon: string; label: string; value: string; warn?: boolean }) {
   return (
     <div style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "2px 8px", borderRadius: 4,
+      display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 4,
       background: warn ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.06)",
       border: `1px solid ${warn ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.1)"}`,
       fontSize: 10, color: warn ? "#fca5a5" : "#9ca3af", whiteSpace: "nowrap" as const,
@@ -126,20 +92,12 @@ function Chip({ icon, label, value, warn = false }: { icon: string; label: strin
   );
 }
 
-// ── File tree node ─────────────────────────────────────────────────────────────
-function TreeNode({
-  node, depth, selectedFile, expandedDirs, onSelect, onToggle,
-}: {
-  node: FileNode;
-  depth: number;
-  selectedFile: string | null;
-  expandedDirs: Set<string>;
-  onSelect: (path: string) => void;
-  onToggle: (path: string) => void;
+function TreeNode({ node, depth, selectedFile, expandedDirs, onSelect, onToggle }: {
+  node: FileNode; depth: number; selectedFile: string | null;
+  expandedDirs: Set<string>; onSelect: (p: string) => void; onToggle: (p: string) => void;
 }) {
   const isSelected = node.type === "file" && selectedFile === node.path;
   const isExpanded = expandedDirs.has(node.path);
-
   return (
     <>
       <div
@@ -164,30 +122,15 @@ function TreeNode({
           <span style={{ color: "#4b5563", fontSize: 9 }}>{humanSize(node.size)}</span>
         )}
       </div>
-      {node.type === "dir" && isExpanded && node.children && (
-        node.children.map(child => (
-          <TreeNode
-            key={child.path} node={child} depth={depth + 1}
-            selectedFile={selectedFile} expandedDirs={expandedDirs}
-            onSelect={onSelect} onToggle={onToggle}
-          />
-        ))
-      )}
+      {node.type === "dir" && isExpanded && node.children?.map(child => (
+        <TreeNode key={child.path} node={child} depth={depth + 1}
+          selectedFile={selectedFile} expandedDirs={expandedDirs}
+          onSelect={onSelect} onToggle={onToggle} />
+      ))}
     </>
   );
 }
 
-function getFileIcon(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    ts: "🟦", tsx: "⚛️", js: "🟨", jsx: "⚛️",
-    json: "📋", md: "📝", css: "🎨", html: "🌐",
-    env: "🔐", sh: "⚙️", sql: "🗄️", txt: "📄",
-  };
-  return map[ext] || "📄";
-}
-
-// ── Log line ───────────────────────────────────────────────────────────────────
 const LogLine = React.memo(({ log }: { log: LogEntry }) => (
   <div style={{
     display: "flex", gap: 6, alignItems: "flex-start",
@@ -202,23 +145,16 @@ const LogLine = React.memo(({ log }: { log: LogEntry }) => (
     <span style={{ color: "#7c3aed", flexShrink: 0, width: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontSize: 10 }}>
       [{log.source}]
     </span>
-    <span style={{
-      flex: 1, wordBreak: "break-all" as const,
-      color: log.level === "error" ? "#fca5a5" : log.level === "warn" ? "#fde68a" : "#d1d5db",
-    }}>
+    <span style={{ flex: 1, wordBreak: "break-all" as const, color: log.level === "error" ? "#fca5a5" : log.level === "warn" ? "#fde68a" : "#d1d5db" }}>
       {log.message}
     </span>
   </div>
 ));
 
-// ── Security section scores bar ────────────────────────────────────────────────
-function ScanSection({ s }: { s: { name: string; icon: string; score: number; status: string; aiSummary?: string } }) {
+function ScanSection({ s }: { s: { name: string; icon: string; score: number; aiSummary?: string } }) {
   const color = s.score >= 80 ? "#34d399" : s.score >= 60 ? "#fbbf24" : "#f87171";
   return (
-    <div style={{
-      background: "rgba(255,255,255,0.04)", borderRadius: 6,
-      border: "1px solid rgba(255,255,255,0.08)", padding: "8px 10px",
-    }}>
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", padding: "8px 10px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <span style={{ fontSize: 10, color: "#d1d5db" }}>{s.icon} {s.name}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color }}>{s.score}</span>
@@ -226,9 +162,7 @@ function ScanSection({ s }: { s: { name: string; icon: string; score: number; st
       <div style={{ height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 9999, overflow: "hidden" }}>
         <div style={{ width: `${s.score}%`, height: "100%", background: color, borderRadius: 9999, transition: "width 0.5s ease" }} />
       </div>
-      {s.aiSummary && (
-        <p style={{ fontSize: 9, color: "#6b7280", marginTop: 4, lineHeight: 1.4 }}>{s.aiSummary}</p>
-      )}
+      {s.aiSummary && <p style={{ fontSize: 9, color: "#6b7280", marginTop: 4, lineHeight: 1.4 }}>{s.aiSummary}</p>}
     </div>
   );
 }
@@ -239,7 +173,7 @@ export default function ControlCenterPage() {
 
   // Panel state
   const [activeTab, setActiveTab] = useState<"logs" | "editor" | "preview">("logs");
-  const [rightPanel, setRightPanel] = useState<"errors" | "security" | "perf">("errors");
+  const [rightPanel, setRightPanel] = useState<"errors" | "security" | "perf" | "commands">("errors");
   const [showTree, setShowTree] = useState(true);
 
   // Editor
@@ -250,9 +184,7 @@ export default function ControlCenterPage() {
   const [fileContent, setFileContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(
-    new Set(["server", "client", "client/src", "shared"])
-  );
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(["server", "client", "client/src", "shared"]));
 
   // Logs
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -267,7 +199,12 @@ export default function ControlCenterPage() {
   const [scanResult, setScanResult] = useState<any>(null);
   const [scanError, setScanError] = useState<string | null>(null);
 
-  // ── Queries ──
+  // Commands
+  const [cmdOutput, setCmdOutput] = useState<CmdResult | null>(null);
+  const [cmdRunning, setCmdRunning] = useState(false);
+  const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
+
+  // ── Queries ──────────────────────────────────────────────────────────────────
   const { data: metricsData } = useQuery<Metrics>({
     queryKey: ["/api/admin/control-center/metrics"],
     refetchInterval: 10_000,
@@ -280,294 +217,230 @@ export default function ControlCenterPage() {
     queryKey: ["/api/admin/control-center/files"],
     staleTime: 60_000,
   });
+  const { data: commandsData } = useQuery<{ commands: Array<{ id: string; label: string }> }>({
+    queryKey: ["/api/admin/control-center/commands"],
+    staleTime: Infinity,
+  });
 
-  // ── Load Monaco from CDN ──
+  // ── Monaco loader ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (window.monaco) { setMonacoReady(true); return; }
-    if (document.querySelector('script[data-monaco]')) return; // already loading
-
+    if (document.querySelector("script[data-monaco]")) return;
     const script = document.createElement("script");
     script.src = "https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js";
     script.setAttribute("data-monaco", "1");
     script.onload = () => {
-      window.require.config({
-        paths: { vs: "https://unpkg.com/monaco-editor@0.45.0/min/vs" },
-      });
+      window.require.config({ paths: { vs: "https://unpkg.com/monaco-editor@0.45.0/min/vs" } });
       window.require(["vs/editor/editor.main"], () => setMonacoReady(true));
     };
     document.head.appendChild(script);
   }, []);
 
-  // ── Init Monaco editor when tab is editor + ready ──
+  // ── Init Monaco when switching to editor tab ──────────────────────────────────
   useEffect(() => {
-    if (activeTab !== "editor" || !monacoReady || !monacoContainer.current) return;
-    if (editorRef.current) return; // already created
-
+    if (activeTab !== "editor" || !monacoReady || !monacoContainer.current || editorRef.current) return;
     editorRef.current = window.monaco.editor.create(monacoContainer.current, {
       value: fileContent,
       language: selectedFile ? getLanguage(selectedFile) : "typescript",
-      theme: "vs-dark",
-      fontSize: 12,
+      theme: "vs-dark", fontSize: 12,
       fontFamily: "'Fira Code', 'JetBrains Mono', Consolas, monospace",
       minimap: { enabled: window.innerWidth > 1400 },
-      lineNumbers: "on",
-      scrollBeyondLastLine: false,
-      automaticLayout: true,
-      tabSize: 2,
-      insertSpaces: true,
-      wordWrap: "off",
-      folding: true,
+      lineNumbers: "on", scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2,
     });
-
     editorRef.current.onDidChangeModelContent(() => setIsDirty(true));
   }, [activeTab, monacoReady]); // eslint-disable-line
 
-  // ── Update Monaco content when file changes ──
+  // ── Sync Monaco content when file changes ─────────────────────────────────────
   useEffect(() => {
     if (!editorRef.current || !window.monaco || !selectedFile) return;
-    const lang = getLanguage(selectedFile);
-    const model = window.monaco.editor.createModel(fileContent, lang);
+    const model = window.monaco.editor.createModel(fileContent, getLanguage(selectedFile));
     editorRef.current.setModel(model);
     setIsDirty(false);
   }, [fileContent, selectedFile]);
 
-  // ── SSE connection ──
+  // ── SSE connection ────────────────────────────────────────────────────────────
   useEffect(() => {
     let es: EventSource;
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-
+    let timer: ReturnType<typeof setTimeout>;
     function connect() {
       setSseStatus("connecting");
       es = new EventSource("/api/admin/control-center/stream");
-
       es.onopen = () => setSseStatus("connected");
-
-      es.onerror = () => {
-        setSseStatus("disconnected");
-        es.close();
-        reconnectTimer = setTimeout(connect, 5000);
-      };
-
+      es.onerror = () => { setSseStatus("disconnected"); es.close(); timer = setTimeout(connect, 5000); };
       es.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
           if (data.type === "history") {
             setLogs(prev => {
-              const merged = [...prev, ...data.logs];
-              // dedup by id
               const seen = new Set<string>();
-              return merged.filter(l => { const ok = !seen.has(l.id); seen.add(l.id); return ok; }).slice(-500);
+              return [...prev, ...data.logs].filter(l => { const ok = !seen.has(l.id); seen.add(l.id); return ok; }).slice(-500);
             });
           } else if (data.type === "log") {
             setLogs(prev => [...prev, data.entry].slice(-500));
           } else if (data.type === "error") {
             qc.invalidateQueries({ queryKey: ["/api/admin/control-center/errors"] });
           }
-        } catch { /* ignore parse errors */ }
+        } catch { /* ignore */ }
       };
     }
-
     connect();
-    return () => { clearTimeout(reconnectTimer); es?.close(); };
+    return () => { clearTimeout(timer); es?.close(); };
   }, [qc]);
 
-  // ── Auto-scroll logs ──
+  // ── Auto-scroll logs ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (autoScroll && activeTab === "logs") {
-      logsBottomRef.current?.scrollIntoView({ behavior: "instant" });
-    }
+    if (autoScroll && activeTab === "logs") logsBottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [logs, autoScroll, activeTab]);
 
-  // ── Ctrl+S to save ──
+  // ── Ctrl+S to save ────────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s" && activeTab === "editor") {
-        e.preventDefault();
-        saveFile();
-      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "s" && activeTab === "editor") { e.preventDefault(); saveFile(); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [activeTab, selectedFile]); // eslint-disable-line
 
-  // ── Load file ──
+  // ── Load file ─────────────────────────────────────────────────────────────────
   const loadFile = useCallback(async (filePath: string) => {
     try {
       const res = await fetch(`/api/admin/control-center/file?path=${encodeURIComponent(filePath)}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.warn("[control-center] Failed to load file:", err.error || res.status);
-        return;
-      }
+      if (!res.ok) return;
       const data = await res.json();
-      setSelectedFile(filePath);
-      setFileContent(data.content ?? "");
-      setIsDirty(false);
-      setActiveTab("editor");
-    } catch (e) {
-      console.error("[control-center] Load file error:", e);
-    }
+      setSelectedFile(filePath); setFileContent(data.content ?? ""); setIsDirty(false); setActiveTab("editor");
+    } catch { /* ignore */ }
   }, []);
 
-  // ── Save file ──
+  // ── Save file ─────────────────────────────────────────────────────────────────
   const saveFile = useCallback(async () => {
     if (!selectedFile || !editorRef.current) return;
     const content = editorRef.current.getValue() as string;
     setSaveStatus("saving");
     try {
       const res = await fetch("/api/admin/control-center/file", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: selectedFile, content }),
       });
       const data = await res.json();
-      if (data.success) {
-        setIsDirty(false);
-        setSaveStatus("saved");
-        setTimeout(() => setSaveStatus("idle"), 2000);
-      } else {
-        setSaveStatus("error");
-        setTimeout(() => setSaveStatus("idle"), 3000);
-      }
-    } catch {
-      setSaveStatus("error");
-      setTimeout(() => setSaveStatus("idle"), 3000);
-    }
+      if (data.success) { setIsDirty(false); setSaveStatus("saved"); setTimeout(() => setSaveStatus("idle"), 2000); }
+      else { setSaveStatus("error"); setTimeout(() => setSaveStatus("idle"), 3000); }
+    } catch { setSaveStatus("error"); setTimeout(() => setSaveStatus("idle"), 3000); }
   }, [selectedFile]);
 
-  // ── Security scan ──
+  // ── Security scan ─────────────────────────────────────────────────────────────
   const runScan = async () => {
-    setScanning(true);
-    setScanError(null);
+    setScanning(true); setScanError(null);
     try {
       const res = await fetch("/api/admin/security/scan", { method: "POST" });
       const data = await res.json();
-      // scan returns { scanId } — then we poll for result
       if (data.scanId) {
-        // Poll until complete
         let attempts = 0;
         const poll = async (): Promise<void> => {
-          attempts++;
-          if (attempts > 60) { setScanError("Scan timed out"); setScanning(false); return; }
-          const r = await fetch(`/api/admin/security/scans`);
+          if (++attempts > 60) { setScanError("Scan timed out"); setScanning(false); return; }
+          const r = await fetch("/api/admin/security/scans");
           const d = await r.json();
           const latest = d.data?.[0];
-          if (latest?.status === "complete") {
-            setScanResult(latest);
-            setScanning(false);
-          } else {
-            setTimeout(poll, 2000);
-          }
+          if (latest?.status === "complete") { setScanResult(latest); setScanning(false); }
+          else setTimeout(poll, 2000);
         };
         setTimeout(poll, 2000);
-      } else if (data.overallScore !== undefined) {
-        setScanResult(data);
-        setScanning(false);
-      } else {
-        setScanError(data.error || "Scan failed");
-        setScanning(false);
-      }
-    } catch (e: any) {
-      setScanError(e.message);
-      setScanning(false);
-    }
+      } else if (data.overallScore !== undefined) { setScanResult(data); setScanning(false); }
+      else { setScanError(data.error || "Scan failed"); setScanning(false); }
+    } catch (e: any) { setScanError(e.message); setScanning(false); }
   };
 
-  // ── Tree toggle ──
-  const toggleDir = useCallback((p: string) => {
-    setExpandedDirs(prev => {
-      const next = new Set(prev);
-      next.has(p) ? next.delete(p) : next.add(p);
-      return next;
-    });
+  // ── Run command ───────────────────────────────────────────────────────────────
+  const runCommand = useCallback(async (commandId: string, label: string) => {
+    setCmdRunning(true); setCmdOutput(null);
+    try {
+      const res = await fetch("/api/admin/control-center/run", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commandId }),
+      });
+      const data = await res.json();
+      setCmdOutput({ id: commandId, label: data.label || label, output: data.output || "", exitCode: data.exitCode ?? 0, ts: Date.now() });
+    } catch (e: any) {
+      setCmdOutput({ id: commandId, label, output: `Error: ${e.message}`, exitCode: 1, ts: Date.now() });
+    } finally { setCmdRunning(false); }
   }, []);
 
-  // ── Derived values ──
+  // ── Fetch git info ────────────────────────────────────────────────────────────
+  const fetchGit = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/control-center/git");
+      if (res.ok) setGitInfo(await res.json());
+    } catch { /* offline */ }
+  }, []);
+
+  useEffect(() => { fetchGit(); const t = setInterval(fetchGit, 30_000); return () => clearInterval(t); }, [fetchGit]);
+
+  // ── Tree toggle ───────────────────────────────────────────────────────────────
+  const toggleDir = useCallback((p: string) => {
+    setExpandedDirs(prev => { const next = new Set(prev); next.has(p) ? next.delete(p) : next.add(p); return next; });
+  }, []);
+
+  // ── Derived ───────────────────────────────────────────────────────────────────
   const errors = errorsData?.data ?? [];
   const metrics = metricsData;
-
   const filteredLogs = logs.filter(l => {
     if (logLevel !== "all" && l.level !== logLevel) return false;
     if (logSearch && !l.message.toLowerCase().includes(logSearch.toLowerCase())) return false;
     return true;
   });
-
   const sseColor = sseStatus === "connected" ? "#34d399" : sseStatus === "connecting" ? "#fbbf24" : "#f87171";
 
-  const BASE: React.CSSProperties = {
-    display: "flex", flexDirection: "column", height: "100vh",
-    background: "#0a0a0f", color: "#e5e7eb",
-    fontFamily: "'Inter', system-ui, sans-serif", fontSize: 12, overflow: "hidden",
-  };
+  // ── Shared styles ─────────────────────────────────────────────────────────────
+  const tabBtn = (active: boolean) => ({
+    padding: "0 14px", height: 36, background: "none" as const, border: "none" as const,
+    borderBottom: `2px solid ${active ? "#7c3aed" : "transparent"}`,
+    color: active ? "#e5e7eb" : "#6b7280", cursor: "pointer" as const,
+    fontSize: 11, fontWeight: (active ? 600 : 400) as number,
+    display: "flex" as const, alignItems: "center" as const, gap: 5,
+  });
 
+  const rTabBtn = (active: boolean) => ({
+    flex: "0 0 auto" as const, padding: "8px 10px", background: active ? "rgba(255,255,255,0.06)" : "none",
+    border: "none", borderBottom: `2px solid ${active ? "#7c3aed" : "transparent"}`,
+    color: active ? "#e5e7eb" : "#6b7280", cursor: "pointer", fontSize: 10,
+    fontWeight: (active ? 600 : 400) as number, whiteSpace: "nowrap" as const,
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div style={BASE}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0a0a0f", color: "#e5e7eb", fontFamily: "'Inter', system-ui, sans-serif", fontSize: 12, overflow: "hidden" }}>
 
-      {/* ── Top metrics bar ──────────────────────────────────────────────────── */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "6px 14px",
-        background: "#111118", borderBottom: "1px solid rgba(255,255,255,0.08)",
-        flexShrink: 0, flexWrap: "wrap",
-      }}>
-        <span style={{ fontWeight: 700, color: "#a78bfa", fontSize: 13, marginRight: 8 }}>
-          ⚡ Control Center
-        </span>
-
+      {/* ── Metrics bar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: "#111118", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 700, color: "#a78bfa", fontSize: 13, marginRight: 8 }}>⚡ Control Center</span>
         {metrics ? (
           <>
             <Chip icon="⏱" label="Uptime" value={formatUptime(metrics.system.uptimeSec)} />
-            <Chip
-              icon="🧠" label="RAM"
-              value={`${metrics.system.memHeapUsedMb}/${metrics.system.memHeapTotalMb}MB (${metrics.system.memPct}%)`}
-              warn={metrics.system.memPct > 80}
-            />
+            <Chip icon="🧠" label="RAM" value={`${metrics.system.memHeapUsedMb}/${metrics.system.memHeapTotalMb}MB (${metrics.system.memPct}%)`} warn={metrics.system.memPct > 80} />
             <Chip icon="🔗" label="SSE" value={`${metrics.sseClients} live`} />
             <Chip icon="🟢" label="Node" value={metrics.system.nodeVersion} />
           </>
-        ) : (
-          <span style={{ color: "#4b5563", fontSize: 10 }}>Loading metrics…</span>
-        )}
-
+        ) : <span style={{ color: "#4b5563", fontSize: 10 }}>Loading metrics…</span>}
         <Chip icon="⚠️" label="Errors" value={String(errors.length)} warn={errors.length > 0} />
-
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: sseColor, display: "inline-block" }} />
           <span style={{ fontSize: 10, color: "#6b7280" }}>{sseStatus}</span>
         </div>
       </div>
 
-      {/* ── Main 3-column layout ─────────────────────────────────────────────── */}
+      {/* ── Main 3-column layout ── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* File tree sidebar */}
+        {/* File tree */}
         {showTree && (
-          <div style={{
-            width: 210, flexShrink: 0, background: "#0f0f19",
-            borderRight: "1px solid rgba(255,255,255,0.07)",
-            display: "flex", flexDirection: "column", overflow: "hidden",
-          }}>
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,0.07)",
-              background: "#111118",
-            }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: "#6b7280", letterSpacing: 1, textTransform: "uppercase" as const }}>
-                Explorer
-              </span>
+          <div style={{ width: 210, flexShrink: 0, background: "#0f0f19", borderRight: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#111118" }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: "#6b7280", letterSpacing: 1, textTransform: "uppercase" as const }}>Explorer</span>
               <button onClick={() => setShowTree(false)} style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 11 }}>✕</button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
-              {filesData?.tree ? (
-                filesData.tree.map(node => (
-                  <TreeNode
-                    key={node.path} node={node} depth={0}
-                    selectedFile={selectedFile} expandedDirs={expandedDirs}
-                    onSelect={loadFile} onToggle={toggleDir}
-                  />
-                ))
-              ) : (
-                <div style={{ color: "#4b5563", textAlign: "center", padding: 16, fontSize: 10 }}>Loading…</div>
-              )}
+              {filesData?.tree
+                ? filesData.tree.map(node => <TreeNode key={node.path} node={node} depth={0} selectedFile={selectedFile} expandedDirs={expandedDirs} onSelect={loadFile} onToggle={toggleDir} />)
+                : <div style={{ color: "#4b5563", textAlign: "center", padding: 16, fontSize: 10 }}>Loading…</div>}
             </div>
           </div>
         )}
@@ -576,114 +449,43 @@ export default function ControlCenterPage() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
           {/* Tab bar */}
-          <div style={{
-            display: "flex", alignItems: "center",
-            background: "#111118", borderBottom: "1px solid rgba(255,255,255,0.07)",
-            flexShrink: 0, minHeight: 36,
-          }}>
+          <div style={{ display: "flex", alignItems: "center", background: "#111118", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0, minHeight: 36 }}>
             {!showTree && (
-              <button
-                onClick={() => setShowTree(true)}
-                style={{ padding: "0 10px", background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 12 }}
-              >
-                📁
-              </button>
+              <button onClick={() => setShowTree(true)} style={{ padding: "0 10px", background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 12 }}>📁</button>
             )}
+            <button style={tabBtn(activeTab === "logs")} onClick={() => setActiveTab("logs")}>
+              📋 Live Logs
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: sseColor, display: "inline-block" }} />
+            </button>
+            <button style={tabBtn(activeTab === "editor")} onClick={() => setActiveTab("editor")}>
+              📝 Editor
+              {isDirty && <span style={{ color: "#fbbf24", fontSize: 8 }}>●</span>}
+            </button>
+            <button style={tabBtn(activeTab === "preview")} onClick={() => setActiveTab("preview")}>🌐 Preview</button>
 
-            {(["logs", "editor", "preview"] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  padding: "0 16px", height: 36, background: "none", border: "none",
-                  borderBottom: `2px solid ${activeTab === tab ? "#7c3aed" : "transparent"}`,
-                  color: activeTab === tab ? "#e5e7eb" : "#6b7280",
-                  cursor: "pointer", fontSize: 11, fontWeight: activeTab === tab ? 600 : 400,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}
-              >
-                {tab === "logs" && "📋 Live Logs"}
-                {tab === "editor" && "📝 Editor"}
-                {tab === "preview" && "🌐 Preview"}
-                {tab === "logs" && (
-                  <span style={{
-                    width: 6, height: 6, borderRadius: "50%", background: sseColor,
-                    display: "inline-block",
-                    animation: sseStatus === "connected" ? "pulse 2s infinite" : "none",
-                  }} />
-                )}
-                {tab === "editor" && isDirty && (
-                  <span style={{ color: "#fbbf24", fontSize: 8 }}>●</span>
-                )}
-              </button>
-            ))}
-
-            {/* Tab-specific controls */}
             {activeTab === "logs" && (
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, paddingRight: 10 }}>
-                <input
-                  type="text"
-                  placeholder="Search…"
-                  value={logSearch}
-                  onChange={e => setLogSearch(e.target.value)}
-                  style={{
-                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 4, padding: "2px 8px", color: "#e5e7eb", fontSize: 10, width: 120,
-                    outline: "none",
-                  }}
-                />
-                <select
-                  value={logLevel}
-                  onChange={e => setLogLevel(e.target.value)}
-                  style={{
-                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 4, padding: "2px 4px", color: "#e5e7eb", fontSize: 10,
-                  }}
-                >
-                  <option value="all">All</option>
-                  <option value="info">Info</option>
-                  <option value="warn">Warn</option>
-                  <option value="error">Error</option>
+                <input type="text" placeholder="Search…" value={logSearch} onChange={e => setLogSearch(e.target.value)}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "2px 8px", color: "#e5e7eb", fontSize: 10, width: 120, outline: "none" }} />
+                <select value={logLevel} onChange={e => setLogLevel(e.target.value)}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "2px 4px", color: "#e5e7eb", fontSize: 10 }}>
+                  <option value="all">All</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option>
                 </select>
-                <button
-                  onClick={() => setAutoScroll(p => !p)}
-                  style={{
-                    background: autoScroll ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)",
-                    border: `1px solid ${autoScroll ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.1)"}`,
-                    borderRadius: 4, padding: "2px 8px", color: autoScroll ? "#c4b5fd" : "#9ca3af",
-                    cursor: "pointer", fontSize: 10,
-                  }}
-                >
+                <button onClick={() => setAutoScroll(p => !p)}
+                  style={{ background: autoScroll ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)", border: `1px solid ${autoScroll ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 4, padding: "2px 8px", color: autoScroll ? "#c4b5fd" : "#9ca3af", cursor: "pointer", fontSize: 10 }}>
                   {autoScroll ? "⬇ Auto" : "⏸ Paused"}
                 </button>
-                <button
-                  onClick={() => setLogs([])}
-                  style={{
-                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 4, padding: "2px 8px", color: "#9ca3af", cursor: "pointer", fontSize: 10,
-                  }}
-                >
+                <button onClick={() => setLogs([])}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "2px 8px", color: "#9ca3af", cursor: "pointer", fontSize: 10 }}>
                   Clear
                 </button>
               </div>
             )}
-
             {activeTab === "editor" && selectedFile && (
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, paddingRight: 10 }}>
-                <span style={{ color: "#6b7280", fontSize: 10, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {selectedFile}
-                </span>
-                <button
-                  onClick={saveFile}
-                  disabled={!isDirty || saveStatus === "saving"}
-                  style={{
-                    background: isDirty ? "rgba(139,92,246,0.4)" : "rgba(255,255,255,0.06)",
-                    border: `1px solid ${isDirty ? "rgba(139,92,246,0.6)" : "rgba(255,255,255,0.1)"}`,
-                    borderRadius: 4, padding: "2px 10px",
-                    color: isDirty ? "#c4b5fd" : "#4b5563",
-                    cursor: isDirty ? "pointer" : "not-allowed", fontSize: 10,
-                  }}
-                >
+                <span style={{ color: "#6b7280", fontSize: 10, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedFile}</span>
+                <button onClick={saveFile} disabled={!isDirty || saveStatus === "saving"}
+                  style={{ background: isDirty ? "rgba(139,92,246,0.4)" : "rgba(255,255,255,0.06)", border: `1px solid ${isDirty ? "rgba(139,92,246,0.6)" : "rgba(255,255,255,0.1)"}`, borderRadius: 4, padding: "2px 10px", color: isDirty ? "#c4b5fd" : "#4b5563", cursor: isDirty ? "pointer" : "not-allowed", fontSize: 10 }}>
                   {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : saveStatus === "error" ? "✕ Error" : "Save  Ctrl+S"}
                 </button>
               </div>
@@ -692,185 +494,91 @@ export default function ControlCenterPage() {
 
           {/* Content */}
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-
-            {/* Log stream */}
+            {/* Logs */}
             {activeTab === "logs" && (
-              <div style={{
-                position: "absolute", inset: 0, overflowY: "auto",
-                background: "#080810", padding: 6,
-              }}>
-                {filteredLogs.length === 0 ? (
-                  <div style={{ color: "#374151", textAlign: "center", padding: 32 }}>
-                    {sseStatus === "connected" ? "Waiting for server logs…" : "Connecting to log stream…"}
-                  </div>
-                ) : (
-                  filteredLogs.map(l => <LogLine key={l.id} log={l} />)
-                )}
+              <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#080810", padding: 6 }}>
+                {filteredLogs.length === 0
+                  ? <div style={{ color: "#374151", textAlign: "center", padding: 32 }}>{sseStatus === "connected" ? "Waiting for server logs…" : "Connecting…"}</div>
+                  : filteredLogs.map(l => <LogLine key={l.id} log={l} />)}
                 <div ref={logsBottomRef} />
               </div>
             )}
-
-            {/* Monaco editor */}
+            {/* Editor */}
             <div style={{ position: "absolute", inset: 0, display: activeTab === "editor" ? "flex" : "none", flexDirection: "column" }}>
-              {!monacoReady && (
-                <div style={{ color: "#4b5563", textAlign: "center", padding: 32 }}>
-                  Loading Monaco Editor from CDN…
-                </div>
-              )}
               {monacoReady && !selectedFile && (
-                <div style={{
-                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-                  justifyContent: "center", color: "#374151", gap: 8,
-                }}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#374151", gap: 8 }}>
                   <div style={{ fontSize: 40 }}>📄</div>
-                  <div style={{ fontSize: 13 }}>Select a file from the Explorer to start editing</div>
-                  <div style={{ fontSize: 11, color: "#1f2937" }}>Supports .ts, .tsx, .js, .json, .css, .md</div>
+                  <div style={{ fontSize: 13 }}>Select a file from the Explorer to edit</div>
                 </div>
               )}
+              {!monacoReady && <div style={{ color: "#4b5563", textAlign: "center", padding: 32 }}>Loading Monaco Editor…</div>}
               <div ref={monacoContainer} style={{ flex: 1 }} />
             </div>
-
-            {/* Live preview */}
+            {/* Preview */}
             {activeTab === "preview" && (
-              <iframe
-                src="/"
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", background: "#fff" }}
-                title="Live App Preview"
-                sandbox="allow-scripts allow-same-origin allow-forms"
-              />
+              <iframe src="/" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", background: "#fff" }} title="Live Preview" sandbox="allow-scripts allow-same-origin allow-forms" />
             )}
           </div>
         </div>
 
         {/* Right panel */}
-        <div style={{
-          width: 300, flexShrink: 0, background: "#0f0f19",
-          borderLeft: "1px solid rgba(255,255,255,0.07)",
-          display: "flex", flexDirection: "column", overflow: "hidden",
-        }}>
+        <div style={{ width: 300, flexShrink: 0, background: "#0f0f19", borderLeft: "1px solid rgba(255,255,255,0.07)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-          {/* Right tab bar */}
-          <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
-            {(["errors", "security", "perf"] as const).map(p => (
-              <button
-                key={p}
-                onClick={() => setRightPanel(p)}
-                style={{
-                  flex: 1, padding: "8px 4px",
-                  background: rightPanel === p ? "rgba(255,255,255,0.06)" : "none",
-                  border: "none",
-                  borderBottom: `2px solid ${rightPanel === p ? "#7c3aed" : "transparent"}`,
-                  color: rightPanel === p ? "#e5e7eb" : "#6b7280",
-                  cursor: "pointer", fontSize: 10, fontWeight: rightPanel === p ? 600 : 400,
-                }}
-              >
-                {p === "errors" && `⚠️ Errors (${errors.length})`}
-                {p === "security" && "🛡️ Security"}
-                {p === "perf" && "📈 Perf"}
-              </button>
-            ))}
+          {/* Right tabs */}
+          <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0, overflowX: "auto" }}>
+            <button style={rTabBtn(rightPanel === "errors")}   onClick={() => setRightPanel("errors")}>⚠️ Errors ({errors.length})</button>
+            <button style={rTabBtn(rightPanel === "security")} onClick={() => setRightPanel("security")}>🛡️ Security</button>
+            <button style={rTabBtn(rightPanel === "perf")}     onClick={() => setRightPanel("perf")}>📈 Perf</button>
+            <button style={rTabBtn(rightPanel === "commands")} onClick={() => setRightPanel("commands")}>🖥 Commands</button>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
 
-            {/* Error tracker */}
+            {/* ── Errors ── */}
             {rightPanel === "errors" && (
               <div>
-                <div style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)",
-                }}>
-                  <span style={{ fontSize: 10, color: "#6b7280" }}>
-                    {errors.length} unique error{errors.length !== 1 ? "s" : ""} tracked
-                  </span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span style={{ fontSize: 10, color: "#6b7280" }}>{errors.length} unique error{errors.length !== 1 ? "s" : ""}</span>
                   {errors.length > 0 && (
-                    <button
-                      onClick={async () => {
-                        await fetch("/api/admin/control-center/errors", { method: "DELETE" });
-                        refetchErrors();
-                      }}
-                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 10 }}
-                    >
-                      Clear all
-                    </button>
+                    <button onClick={async () => { await fetch("/api/admin/control-center/errors", { method: "DELETE" }); refetchErrors(); }}
+                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>Clear all</button>
                   )}
                 </div>
-
-                {errors.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: 32, color: "#374151" }}>
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                    <div style={{ fontSize: 11 }}>No errors tracked</div>
-                  </div>
-                ) : (
-                  errors.map(err => (
-                    <div key={err.id} style={{
-                      borderBottom: "1px solid rgba(255,255,255,0.05)",
-                      padding: "10px 10px",
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
-                        <div style={{ color: "#fca5a5", fontSize: 10, fontWeight: 600, lineHeight: 1.4, wordBreak: "break-all", flex: 1 }}>
-                          {err.message}
+                {errors.length === 0
+                  ? <div style={{ textAlign: "center", padding: 32, color: "#374151" }}><div style={{ fontSize: 28, marginBottom: 8 }}>✅</div><div style={{ fontSize: 11 }}>No errors tracked</div></div>
+                  : errors.map(err => (
+                      <div key={err.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", padding: "10px 10px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
+                          <div style={{ color: "#fca5a5", fontSize: 10, fontWeight: 600, lineHeight: 1.4, wordBreak: "break-all", flex: 1 }}>{err.message}</div>
+                          {err.count > 1 && <span style={{ background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 99, padding: "1px 6px", fontSize: 9, flexShrink: 0 }}>×{err.count}</span>}
                         </div>
-                        {err.count > 1 && (
-                          <span style={{
-                            background: "rgba(239,68,68,0.2)", color: "#fca5a5",
-                            border: "1px solid rgba(239,68,68,0.3)",
-                            borderRadius: 99, padding: "1px 6px", fontSize: 9, flexShrink: 0,
-                          }}>
-                            ×{err.count}
-                          </span>
+                        {err.route && <div style={{ color: "#4b5563", fontSize: 9, marginTop: 2 }}>Route: {err.route}</div>}
+                        <div style={{ color: "#374151", fontSize: 9, marginTop: 2 }}>{formatTs(err.lastSeen)}</div>
+                        {err.stack && (
+                          <details style={{ marginTop: 4 }}>
+                            <summary style={{ color: "#4b5563", fontSize: 9, cursor: "pointer" }}>Stack trace</summary>
+                            <pre style={{ color: "#4b5563", fontSize: 8, marginTop: 4, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{err.stack}</pre>
+                          </details>
                         )}
                       </div>
-                      {err.route && <div style={{ color: "#4b5563", fontSize: 9, marginTop: 2 }}>Route: {err.route}</div>}
-                      <div style={{ color: "#374151", fontSize: 9, marginTop: 2 }}>{formatTs(err.lastSeen)}</div>
-                      {err.stack && (
-                        <details style={{ marginTop: 4 }}>
-                          <summary style={{ color: "#4b5563", fontSize: 9, cursor: "pointer" }}>Stack trace</summary>
-                          <pre style={{
-                            color: "#4b5563", fontSize: 8, marginTop: 4,
-                            overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
-                          }}>{err.stack}</pre>
-                        </details>
-                      )}
-                    </div>
-                  ))
-                )}
+                    ))}
               </div>
             )}
 
-            {/* Security panel */}
+            {/* ── Security ── */}
             {rightPanel === "security" && (
               <div style={{ padding: 10 }}>
-                <button
-                  onClick={runScan}
-                  disabled={scanning}
-                  style={{
-                    width: "100%", padding: "8px 0",
-                    background: scanning ? "rgba(255,255,255,0.06)" : "rgba(139,92,246,0.3)",
-                    border: `1px solid ${scanning ? "rgba(255,255,255,0.1)" : "rgba(139,92,246,0.5)"}`,
-                    borderRadius: 6, color: scanning ? "#6b7280" : "#c4b5fd",
-                    cursor: scanning ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 600,
-                    marginBottom: 10,
-                  }}
-                >
+                <button onClick={runScan} disabled={scanning}
+                  style={{ width: "100%", padding: "8px 0", background: scanning ? "rgba(255,255,255,0.06)" : "rgba(139,92,246,0.3)", border: `1px solid ${scanning ? "rgba(255,255,255,0.1)" : "rgba(139,92,246,0.5)"}`, borderRadius: 6, color: scanning ? "#6b7280" : "#c4b5fd", cursor: scanning ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 600, marginBottom: 10 }}>
                   {scanning ? "🔍 Scanning…" : "🛡️ Run Security Scan"}
                 </button>
-
-                {scanError && (
-                  <div style={{ color: "#fca5a5", fontSize: 10, marginBottom: 8, padding: 8, background: "rgba(239,68,68,0.1)", borderRadius: 4 }}>
-                    {scanError}
-                  </div>
-                )}
-
+                {scanError && <div style={{ color: "#fca5a5", fontSize: 10, marginBottom: 8, padding: 8, background: "rgba(239,68,68,0.1)", borderRadius: 4 }}>{scanError}</div>}
                 {scanResult ? (
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <div style={{
-                        fontSize: 24, fontWeight: 800,
-                        color: scanResult.overallScore >= 80 ? "#34d399" : scanResult.overallScore >= 60 ? "#fbbf24" : "#f87171",
-                      }}>
-                        {scanResult.overallScore}<span style={{ fontSize: 14 }}>/100</span>
-                        {" "}<span style={{ fontSize: 13, fontWeight: 700 }}>Grade {scanResult.grade}</span>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: scanResult.overallScore >= 80 ? "#34d399" : scanResult.overallScore >= 60 ? "#fbbf24" : "#f87171" }}>
+                        {scanResult.overallScore}<span style={{ fontSize: 14 }}>/100</span>{" "}
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>Grade {scanResult.grade}</span>
                       </div>
                       <div style={{ textAlign: "right", fontSize: 9 }}>
                         {scanResult.criticalCount > 0 && <div style={{ color: "#f87171" }}>🔴 {scanResult.criticalCount} critical</div>}
@@ -878,55 +586,33 @@ export default function ControlCenterPage() {
                         <div style={{ color: "#fbbf24" }}>🟡 {scanResult.mediumCount} medium</div>
                       </div>
                     </div>
-
-                    {scanResult.summary && (
-                      <p style={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.5, marginBottom: 10 }}>
-                        {scanResult.summary}
-                      </p>
-                    )}
-
+                    {scanResult.summary && <p style={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.5, marginBottom: 10 }}>{scanResult.summary}</p>}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {(scanResult.sections || []).map((s: any) => (
-                        <ScanSection key={s.id} s={s} />
-                      ))}
+                      {(scanResult.sections || []).map((s: any) => <ScanSection key={s.id} s={s} />)}
                     </div>
-
                     <div style={{ textAlign: "center", marginTop: 10 }}>
-                      <a
-                        href="/admin/security-center"
-                        style={{ color: "#a78bfa", fontSize: 10, textDecoration: "none" }}
-                      >
-                        View full Security Center →
-                      </a>
+                      <a href="/admin/security-center" style={{ color: "#a78bfa", fontSize: 10, textDecoration: "none" }}>View full Security Center →</a>
                     </div>
                   </div>
                 ) : !scanning && (
                   <div style={{ textAlign: "center", padding: 24, color: "#374151" }}>
                     <div style={{ fontSize: 32, marginBottom: 8 }}>🛡️</div>
-                    <div style={{ fontSize: 10, marginBottom: 6 }}>Run a scan to check your security posture</div>
-                    <a href="/admin/security-center" style={{ color: "#7c3aed", fontSize: 10, textDecoration: "none" }}>
-                      Open full Security Center
-                    </a>
+                    <div style={{ fontSize: 10, marginBottom: 6 }}>Run a scan to check security posture</div>
+                    <a href="/admin/security-center" style={{ color: "#7c3aed", fontSize: 10, textDecoration: "none" }}>Open full Security Center</a>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Performance panel */}
+            {/* ── Perf ── */}
             {rightPanel === "perf" && (
               <div>
                 {metrics ? (
                   <>
-                    {/* System stats */}
                     <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>System</div>
+                      <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 6, textTransform: "uppercase" as const, letterSpacing: 1 }}>System</div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                        {[
-                          { label: "Uptime", value: formatUptime(metrics.system.uptimeSec) },
-                          { label: "Node", value: metrics.system.nodeVersion },
-                          { label: "Heap", value: `${metrics.system.memHeapUsedMb}/${metrics.system.memHeapTotalMb}MB` },
-                          { label: "RSS", value: `${(metrics as any).system.memRssMb ?? "?"}MB` },
-                        ].map(({ label, value }) => (
+                        {([["Uptime", formatUptime(metrics.system.uptimeSec)], ["Node", metrics.system.nodeVersion], ["Heap", `${metrics.system.memHeapUsedMb}/${metrics.system.memHeapTotalMb}MB`], ["RSS", `${metrics.system.memRssMb ?? "?"}MB`]] as [string, string][]).map(([label, value]) => (
                           <div key={label} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 4, padding: "4px 6px" }}>
                             <div style={{ fontSize: 8, color: "#6b7280" }}>{label}</div>
                             <div style={{ fontSize: 10, color: "#e5e7eb", fontWeight: 600 }}>{value}</div>
@@ -934,88 +620,122 @@ export default function ControlCenterPage() {
                         ))}
                       </div>
                     </div>
-
-                    {/* Memory bar */}
                     <div style={{ padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                         <span style={{ fontSize: 9, color: "#6b7280" }}>Memory</span>
-                        <span style={{ fontSize: 9, color: metrics.system.memPct > 80 ? "#f87171" : "#9ca3af" }}>
-                          {metrics.system.memPct}%
-                        </span>
+                        <span style={{ fontSize: 9, color: metrics.system.memPct > 80 ? "#f87171" : "#9ca3af" }}>{metrics.system.memPct}%</span>
                       </div>
                       <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 9999 }}>
-                        <div style={{
-                          width: `${metrics.system.memPct}%`, height: "100%", borderRadius: 9999,
-                          background: metrics.system.memPct > 80 ? "#ef4444" : metrics.system.memPct > 60 ? "#fbbf24" : "#34d399",
-                          transition: "width 0.5s",
-                        }} />
+                        <div style={{ width: `${metrics.system.memPct}%`, height: "100%", borderRadius: 9999, background: metrics.system.memPct > 80 ? "#ef4444" : metrics.system.memPct > 60 ? "#fbbf24" : "#34d399", transition: "width 0.5s" }} />
                       </div>
                     </div>
-
-                    {/* Recommendations */}
                     {metrics.recommendations.length > 0 && (
                       <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                        <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Recommendations</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {metrics.recommendations.map((r, i) => (
-                            <div key={i} style={{
-                              fontSize: 9, color: "#9ca3af", lineHeight: 1.4,
-                              padding: "4px 8px", background: "rgba(251,191,36,0.06)",
-                              border: "1px solid rgba(251,191,36,0.15)", borderRadius: 4,
-                            }}>
-                              ⚡ {r}
-                            </div>
-                          ))}
-                        </div>
+                        <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 6, textTransform: "uppercase" as const, letterSpacing: 1 }}>Recommendations</div>
+                        {metrics.recommendations.map((r, i) => (
+                          <div key={i} style={{ fontSize: 9, color: "#9ca3af", lineHeight: 1.4, padding: "4px 8px", background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.15)", borderRadius: 4, marginBottom: 4 }}>⚡ {r}</div>
+                        ))}
                       </div>
                     )}
-
-                    {/* Top endpoints */}
                     <div style={{ padding: "8px 10px" }}>
-                      <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
-                        Slowest Endpoints
-                      </div>
+                      <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 6, textTransform: "uppercase" as const, letterSpacing: 1 }}>Slowest Endpoints</div>
                       {metrics.endpoints.slice(0, 8).map(ep => (
-                        <div key={ep.endpoint} style={{
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.03)",
-                        }}>
-                          <span style={{
-                            fontSize: 9, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis",
-                            whiteSpace: "nowrap", flex: 1, maxWidth: 170,
-                          }}>
-                            {ep.endpoint}
-                          </span>
+                        <div key={ep.endpoint} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                          <span style={{ fontSize: 9, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, flex: 1, maxWidth: 170 }}>{ep.endpoint}</span>
                           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                            <span style={{
-                              fontSize: 9,
-                              color: ep.avgMs > 1000 ? "#f87171" : ep.avgMs > 500 ? "#fbbf24" : "#34d399",
-                            }}>
-                              {ep.avgMs}ms
-                            </span>
-                            {ep.errorRate > 0 && (
-                              <span style={{ fontSize: 9, color: "#f87171" }}>{ep.errorRate}%</span>
-                            )}
+                            <span style={{ fontSize: 9, color: ep.avgMs > 1000 ? "#f87171" : ep.avgMs > 500 ? "#fbbf24" : "#34d399" }}>{ep.avgMs}ms</span>
+                            {ep.errorRate > 0 && <span style={{ fontSize: 9, color: "#f87171" }}>{ep.errorRate}%</span>}
                           </div>
                         </div>
                       ))}
                     </div>
                   </>
-                ) : (
-                  <div style={{ color: "#374151", textAlign: "center", padding: 32, fontSize: 10 }}>Loading…</div>
+                ) : <div style={{ color: "#374151", textAlign: "center", padding: 32, fontSize: 10 }}>Loading…</div>}
+              </div>
+            )}
+
+            {/* ── Commands + Git ── */}
+            {rightPanel === "commands" && (
+              <div>
+                {/* Git strip */}
+                <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.02)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 9, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 1 }}>Git</span>
+                    <button onClick={fetchGit} style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 9 }}>↻ refresh</button>
+                  </div>
+                  {gitInfo ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: "#a78bfa" }}>⎇ {gitInfo.branch}</span>
+                        {gitInfo.status && gitInfo.status.length > 0
+                          ? <span style={{ fontSize: 9, color: "#fbbf24", background: "rgba(251,191,36,0.1)", padding: "1px 5px", borderRadius: 3 }}>{gitInfo.status.split("\n").filter(Boolean).length} changed</span>
+                          : <span style={{ fontSize: 9, color: "#34d399" }}>clean</span>}
+                      </div>
+                      {gitInfo.status && gitInfo.status.length > 0 && (
+                        <pre style={{ fontSize: 9, color: "#9ca3af", lineHeight: 1.5, margin: "0 0 6px", overflow: "hidden", maxHeight: 56, whiteSpace: "pre-wrap" }}>
+                          {gitInfo.status.split("\n").slice(0, 4).join("\n")}
+                        </pre>
+                      )}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        {gitInfo.recentCommits.slice(0, 4).map(c => (
+                          <div key={c.hash} style={{ display: "flex", gap: 5, fontSize: 9 }}>
+                            <span style={{ color: "#7c3aed", fontFamily: "monospace", flexShrink: 0 }}>{c.hash}</span>
+                            <span style={{ color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{c.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : <div style={{ fontSize: 9, color: "#4b5563" }}>Loading git info…</div>}
+                </div>
+
+                {/* Command buttons */}
+                <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <div style={{ fontSize: 9, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 1, marginBottom: 6 }}>Quick Commands</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {commandsData?.commands.map(cmd => (
+                      <button key={cmd.id} onClick={() => runCommand(cmd.id, cmd.label)} disabled={cmdRunning}
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "5px 8px", color: cmdRunning ? "#4b5563" : "#d1d5db", cursor: cmdRunning ? "not-allowed" : "pointer", fontSize: 10, textAlign: "left" }}>
+                        {cmd.label}
+                      </button>
+                    ))}
+                    {!commandsData && <div style={{ fontSize: 9, color: "#4b5563" }}>Loading commands…</div>}
+                  </div>
+                </div>
+
+                {/* Running indicator */}
+                {cmdRunning && (
+                  <div style={{ padding: "10px 10px" }}>
+                    <div style={{ fontSize: 9, color: "#9ca3af", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#7c3aed", animation: "pulse 1s infinite" }} />
+                      Running…
+                    </div>
+                  </div>
+                )}
+
+                {/* Command output */}
+                {cmdOutput && !cmdRunning && (
+                  <div style={{ padding: "8px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                      <span style={{ fontSize: 9, color: "#a78bfa", fontWeight: 600 }}>{cmdOutput.label}</span>
+                      <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: cmdOutput.exitCode === 0 ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)", color: cmdOutput.exitCode === 0 ? "#34d399" : "#f87171", border: `1px solid ${cmdOutput.exitCode === 0 ? "rgba(52,211,153,0.3)" : "rgba(248,113,113,0.3)"}` }}>
+                        exit {cmdOutput.exitCode}
+                      </span>
+                    </div>
+                    <pre style={{ fontSize: 9, color: "#d1d5db", lineHeight: 1.6, background: "rgba(0,0,0,0.3)", borderRadius: 5, padding: "8px 10px", overflow: "auto", maxHeight: 320, whiteSpace: "pre-wrap", wordBreak: "break-all", border: "1px solid rgba(255,255,255,0.06)", fontFamily: "monospace" }}>
+                      {cmdOutput.output || "(no output)"}
+                    </pre>
+                    <div style={{ fontSize: 8, color: "#374151", marginTop: 4 }}>{formatTs(cmdOutput.ts)}</div>
+                  </div>
                 )}
               </div>
             )}
+
           </div>
         </div>
       </div>
 
-      {/* Pulse animation */}
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }

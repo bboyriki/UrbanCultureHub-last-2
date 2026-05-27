@@ -632,4 +632,17 @@ async function initStripe() {
       currentBaseUrl,
       {
         enabled_events: WEBHOOK_EVENTS,
-        description:    'Urban Culture Hub — managed Stripe webh
+        description:    'Urban Culture Hub — managed Stripe webhook',
+      }
+    );
+    log(`Webhook configured: ${webhook.url} (UUID: ${uuid})`);
+
+    // Backfill in background — does not block startup
+    stripeSync.syncBackfill()
+      .then(() => log('Stripe data synced successfully'))
+      .catch((err: any) => log(`Error syncing Stripe data: ${err.message}`, 'error'));
+
+  } catch (error: any) {
+    log(`Failed to initialize Stripe: ${error.message}`, 'error');
+  }
+}

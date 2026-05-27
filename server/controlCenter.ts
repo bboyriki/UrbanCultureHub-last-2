@@ -19,10 +19,14 @@
  */
 
 import { EventEmitter } from "events";
+import { exec } from "child_process";
+import { promisify } from "util";
 import type { Express, Request, Response, RequestHandler } from "express";
 import { getPerformanceReport, serverStartTime } from "./perfTracker";
 import path from "path";
 import fs from "fs";
+
+const execAsync = promisify(exec);
 
 // ── Log bus ──────────────────────────────────────────────────────────────────
 export const logBus = new EventEmitter();
@@ -343,5 +347,78 @@ export function registerControlCenterRoutes(app: Express, requireAdmin: RequestH
       errorCount:    errorMap.size,
       uptimeSec:     Math.round((Date.now() - serverStartTime) / 1000),
     });
+  });
+
+  /* ── Safe Quick Commands ─────────────────────────────────────────────────── */
+  // STRICT whitelist — only pre-approved read-only/diagnostic commands.
+  // No arbitrary shell execution is ever allowed, even for admins.
+  const SAFE_COMMANDS: Record<string, { cmd: string; label: string; dangerous?: boolean }> = {
+    "npm-audit":         { cmd: "npm audit --json 2>/dev/null || npm audit 2>&1 | head -80", label: "npm audit" },
+    "npm-outdated":      { cmd: "npm outdated 2>&1 | head -40", label: "npm outdated" },
+    "git-status":        { cmd: "git status --short", label: "git status" },
+    "git-log":           { cmd: "git log --oneline --graph --decorate -20", label: "git log (last 20)" },
+    "git-diff-stat":     { cmd: "git diff --stat HEAD", label: "git diff --stat" },
+    "git-branch":        { cmd: "git branch -a", label: "git branch -a" },
+    "disk-usage":        { cmd: "df -h . 2>&1 | head -5", label: "Disk usage" },
+    "node-version":      { cmd: "node --version && npm --version", label: "Node / npm version" },
+    "process-list":      { cmd: "ps aux --sort=-%cpu 2>/dev/null | head -15 || echo 'ps not available'", label: "Top processes" },
+    "memory-info":       { cmd: "free -h 2>/dev/null || echo 'free not available'", label: "Memory info" },
+    "env-check":         { cmd: "node -e \"const k=['DATABASE_URL','FIREBASE_SERVICE_ACCOUNT','STRIPE_SECRET_KEY','ANTHROPIC_API_KEY','CLOUDINARY_API_KEY','SESSION_SECRET'];k.forEach(n=>console.log(n+':'+(process.env[n]?'✓ set':'✗ MISSING')));\"", label: "Check required env vars" },
+    "ts-errors":         { cmd: "npx tsc --noEmit --skipLibCheck 2>&1 | grep 'error TS' | wc -l | xargs -I{} echo '{} TypeScript errors'", label: "TypeScript error count" },
+  };
+
+  app.get("/api/admin/control-center/commands", requireAdmin, (_req: Request, res: Response) => {
+    const list = Object.entries(SAFE_COMMANDS).map(([id, { label }]) => ({ id, label }));
+    res.json({ commands: list });
+  });
+
+  app.post("/api/admin/control-center/run", requireAdmin, async (req: Request, res: Response) => {
+    const { commandId } = req.body as { commandId?: string };
+
+    if (!commandId) return res.status(400).json({ error: "commandId is required" });
+
+    const cmd = SAFE_COMMANDS[commandId];
+    if (!cmd) {
+      return res.status(403).json({ error: "Unknown or disallowed command" });
+    }
+
+    try {
+      const { stdout, stderr } = await execAsync(cmd.cmd, {
+        cwd: PROJECT_ROOT,
+        timeout: 30_000,
+        maxBuffer: 256 * 1024,
+        env: { ...process.env, FORCE_COLOR: "0" },
+      });
+      const output = (stdout + (stderr ? `\n[stderr]\n${stderr}` : "")).trim();
+      res.json({ commandId, label: cmd.label, output, exitCode: 0 });
+    } catch (e: any) {
+      // exec rejects on non-zero exit but still has stdout (e.g. npm audit)
+      const output = ((e.stdout || "") + (e.stderr ? `\n${e.stderr}` : "")).trim() || e.message;
+      res.json({ commandId, label: cmd.label, output, exitCode: e.code ?? 1 });
+    }
+  });
+
+  /* ── Git quick-view ──────────────────────────────────────────────────────── */
+  app.get("/api/admin/control-center/git", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const [statusResult, logResult, branchResult] = await Promise.allSettled([
+        execAsync("git status --short", { cwd: PROJECT_ROOT, timeout: 8_000 }),
+        execAsync("git log --oneline -5", { cwd: PROJECT_ROOT, timeout: 8_000 }),
+        execAsync("git rev-parse --abbrev-ref HEAD", { cwd: PROJECT_ROOT, timeout: 5_000 }),
+      ]);
+
+      res.json({
+        branch: branchResult.status === "fulfilled" ? branchResult.value.stdout.trim() : "unknown",
+        status: statusResult.status === "fulfilled" ? statusResult.value.stdout.trim() : null,
+        recentCommits: logResult.status === "fulfilled"
+          ? logResult.value.stdout.trim().split("\n").filter(Boolean).map((l: string) => ({
+              hash:    l.slice(0, 7),
+              message: l.slice(8),
+            }))
+          : [],
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 }

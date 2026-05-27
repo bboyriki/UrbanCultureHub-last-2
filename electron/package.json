@@ -1,0 +1,66 @@
+{
+  "name": "uch-control-center",
+  "version": "1.0.0",
+  "description": "Urban Culture Hub — Control Center desktop app",
+  "main": "main.js",
+  "author": "Urban Culture Hub",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:win32": "electron-builder --win --ia32",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^29.4.6",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.urbanculturehub.controlcenter",
+    "productName": "UCH Control Center",
+    "copyright": "Copyright © 2025 Urban Culture Hub",
+    "files": [
+      "main.js",
+      "preload.js",
+      "setup.html",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "UCH Control Center"
+    },
+    "portable": {
+      "artifactName": "UCH-Control-Center-portable.exe"
+    }
+  }
+}

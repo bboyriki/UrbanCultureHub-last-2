@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UCH Control Center — Setup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+      background: #111118;
+      color: #e5e7eb;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      /* top padding for title bar */
+      padding-top: 48px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .logo {
+      width: 56px; height: 56px;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(124,58,237,0.4);
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 28px;
+      text-align: center;
+    }
+
+    .form { width: 100%; max-width: 380px; }
+
+    .field { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #9ca3af;
+      margin-bottom: 6px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    input[type="url"],
+    input[type="text"] {
+      width: 100%;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #e5e7eb;
+      outline: none;
+      transition: border-color 0.15s;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    input[type="url"]:focus,
+    input[type="text"]:focus {
+      border-color: #7c3aed;
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.2);
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #4b5563;
+      margin-top: 5px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .toggle-row:last-of-type { border-bottom: none; }
+
+    .toggle-label { font-size: 13px; color: #d1d5db; }
+    .toggle-desc  { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+    .toggle {
+      position: relative; width: 40px; height: 22px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,0.12);
+      border-radius: 11px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      height: 16px; width: 16px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .slider { background: #7c3aed; }
+    .toggle input:checked + .slider::before { transform: translateX(18px); }
+
+    .btn-save {
+      width: 100%;
+      padding: 11px;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-save:hover:not(:disabled) { opacity: 0.9; }
+    .btn-save:active:not(:disabled) { transform: scale(0.99); }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      text-align: center;
+      min-height: 18px;
+    }
+    .status.error   { color: #f87171; }
+    .status.success { color: #34d399; }
+    .status.loading { color: #9ca3af; }
+
+    .version {
+      position: absolute; bottom: 14px;
+      font-size: 10px; color: #374151;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">⚡</div>
+  <h1>UCH Control Center</h1>
+  <p class="subtitle">Connect to your Railway deployment to get started</p>
+
+  <div class="form">
+    <div class="field">
+      <label for="url">Railway URL</label>
+      <input
+        type="url"
+        id="url"
+        placeholder="https://your-app.up.railway.app"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <p class="hint">Your Railway deployment URL — found in the Railway dashboard.</p>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Minimize to tray on close</div>
+        <div class="toggle-desc">Keep running in the system tray instead of quitting</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="minimize-to-tray" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Launch at Windows startup</div>
+        <div class="toggle-desc">Start automatically when you log into Windows</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="launch-at-startup">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <button class="btn-save" id="save-btn" disabled>Connect</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="version" id="version">v1.0.0</div>
+
+  <script>
+    const urlInput       = document.getElementById("url");
+    const trayToggle     = document.getElementById("minimize-to-tray");
+    const startupToggle  = document.getElementById("launch-at-startup");
+    const saveBtn        = document.getElementById("save-btn");
+    const statusEl       = document.getElementById("status");
+    const versionEl      = document.getElementById("version");
+
+    // Load current settings + version
+    async function init() {
+      if (!window.uchDesktop) {
+        statusEl.textContent = "⚠️  Not running in desktop app";
+        statusEl.className = "status error";
+        return;
+      }
+
+      const [settings, version] = await Promise.all([
+        window.uchDesktop.getSettings(),
+        window.uchDesktop.getVersion(),
+      ]);
+
+      if (settings.railwayUrl) urlInput.value = settings.railwayUrl;
+      trayToggle.checked    = settings.minimizeToTray;
+      startupToggle.checked = settings.launchAtStartup;
+      versionEl.textContent = `v${version}`;
+
+      validateUrl();
+    }
+
+    function validateUrl() {
+      const val = urlInput.value.trim();
+      const valid = val.startsWith("https://") || val.startsWith("http://");
+      saveBtn.disabled = !valid;
+    }
+
+    urlInput.addEventListener("input", validateUrl);
+    urlInput.addEventListener("paste", () => setTimeout(validateUrl, 0));
+
+    // Test connectivity before saving
+    async function testUrl(url) {
+      try {
+        const resp = await fetch(url + "/health", { signal: AbortSignal.timeout(6000) });
+        return resp.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    saveBtn.addEventListener("click", async () => {
+      const url = urlInput.value.trim().replace(/\/$/, "");
+      if (!url) return;
+
+      saveBtn.disabled = true;
+      statusEl.className = "status loading";
+      statusEl.textContent = "Testing connection…";
+
+      const online = await testUrl(url);
+      if (!online) {
+        statusEl.className = "status error";
+        statusEl.textContent = `⚠️  Could not reach ${url}/health — check the URL and try again.`;
+        saveBtn.disabled = false;
+        return;
+      }
+
+      statusEl.textContent = "Saving…";
+
+      const result = await window.uchDesktop.saveSettings({
+        railwayUrl: url,
+        minimizeToTray: trayToggle.checked,
+        launchAtStartup: startupToggle.checked,
+      });
+
+      if (result.success) {
+        statusEl.className = "status success";
+        statusEl.textContent = "✓ Connected! Opening Control Center…";
+      } else {
+        statusEl.className = "status error";
+        statusEl.textContent = `Error: ${result.error}`;
+        saveBtn.disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
