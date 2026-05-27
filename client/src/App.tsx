@@ -420,6 +420,7 @@ function AdminRedirect() {
 }
 
 const SecurityCenterPage        = lazyWithRetry(() => import("@/pages/admin/security-center"));
+const ControlCenterPage         = lazyWithRetry(() => import("@/pages/admin/control-center"));
 const AdminOverviewPage         = lazyWithRetry(() => import("@/pages/admin/overview"));
 const AdminMemoryCalendarPage   = lazyWithRetry(() => import("@/pages/admin/memory-calendar"));
 const AdminLegalAssistantPage   = lazyWithRetry(() => import("@/pages/admin/legal-assistant"));
@@ -1212,6 +1213,10 @@ function App() {
                         {() => <AdminLayout><SecurityCenterPage /></AdminLayout>}
                       </Route>
 
+                      <Route path="/admin/control-center">
+                        {() => <ControlCenterPage />}
+                      </Route>
+
                       <Route path="/admin/overview">
                         {() => <AdminLayout><AdminOverviewPage /></AdminLayout>}
                       </Route>
@@ -1505,15 +1510,4 @@ function App() {
                   <TermsPromptHandler />
                   <LegalAcceptanceDialog />
                   <CookieConsent />
-                </ShoppingCartProvider>
-              </NotificationsProvider>
-              </CallProvider>
-            </WebSocketProvider>
-          </AuthProvider>
-        </LanguageProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
-  );
-}
-
-export default App;
+                </ShoppingCartProv

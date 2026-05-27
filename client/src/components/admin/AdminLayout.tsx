@@ -11,7 +11,7 @@ import {
   Zap, Radio, Shield, Send, Sparkles, CalendarDays, MapPin, Volume2, Vote, Key,
   ShieldCheck, User, ShoppingBag, Palette, Lock, Layout, Share2, Brain, Target,
   Briefcase, Download, Clapperboard, Scissors, CalendarCheck, Bot, Mail, Settings,
-  Home, ArrowLeft, Layers
+  Home, ArrowLeft, Layers, Terminal
 } from "lucide-react";
 import { SiTiktok, SiInstagram, SiSnapchat, SiLinkedin } from "react-icons/si";
 import AiQuickAccess from "./AiQuickAccess";
@@ -24,6 +24,7 @@ const navGroups: NavGroup[] = [
     title: "Main",
     items: [
       { label: "Dashboard", icon: LayoutDashboard, path: "/admin/overview" },
+      { label: "Control Center", icon: Terminal, path: "/admin/control-center" },
       { label: "All Tools", icon: Layers, path: "/admin/tools" },
       { label: "User Management", icon: UserCog, path: "/admin/users" },
     ],
@@ -314,8 +315,4 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Floating AI Quick Access (⌘K / Ctrl+K) */}
-      <AiQuickAccess />
-    </div>
-  );
-}
+     

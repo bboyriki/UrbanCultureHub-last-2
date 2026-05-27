@@ -1,0 +1,48 @@
+{
+  "name": "Urban Culture Hub — Admin",
+  "short_name": "UCH Admin",
+  "description": "Urban Culture Hub admin panel — Control Center, security, and platform management.",
+  "start_url": "/admin/control-center",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#7c3aed",
+  "orientation": "landscape-primary",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Control Center",
+      "short_name": "Control",
+      "description": "Open the real-time Control Center IDE",
+      "url": "/admin/control-center",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Security Center",
+      "short_name": "Security",
+      "description": "Run security scans and review posture",
+      "url": "/admin/security-center",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Admin overview dashboard",
+      "url": "/admin/overview",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    }
+  ]
+}

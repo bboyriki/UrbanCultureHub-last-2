@@ -5,6 +5,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
+import { registerExternalApi } from "./externalApi";
 import { log } from "./logger";
 import { serveStatic } from "./static";
 import { createDefaultAdmin } from "./admin";
@@ -65,6 +66,7 @@ const SCRIPT_SRC: string[] = [
   "https://maps.googleapis.com",
   "https://js.stripe.com",
   "https://unpkg.com",
+  "https://cdn.jsdelivr.net",  // Monaco Editor CDN fallback
   "https://apis.google.com",
   // Google Ads / gtag.js conversion tracking
   "https://www.googletagmanager.com",
@@ -85,6 +87,7 @@ app.use(helmet({
         "'unsafe-inline'",   // Tailwind + shadcn inline styles
         "https://fonts.googleapis.com",
         "https://unpkg.com",
+        "https://cdn.jsdelivr.net",
       ],
       fontSrc: [
         "'self'",
@@ -157,6 +160,8 @@ app.use(helmet({
         "https://nominatim.openstreetmap.org",  // Geocoding
         "https://api.stripe.com",
         "https://api.kvk.nl",
+        "https://unpkg.com",                    // Monaco Editor CDN
+        "https://cdn.jsdelivr.net",             // Monaco Editor CDN fallback
         "https://api.anthropic.com",
         "https://api.openai.com",               // OpenAI / Sora
         "https://api.dev.runwayml.com",         // RunwayML
@@ -397,6 +402,9 @@ async function backgroundInit() {
     //    Pass the already-listening server so the WebSocket server can attach.
     await registerRoutes(app, server);
 
+    // External API — /api/v1/* (API key authenticated, CORS open for external sites)
+    registerExternalApi(app);
+
     // 2. Error handler — must come after routes
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
@@ -624,17 +632,4 @@ async function initStripe() {
       currentBaseUrl,
       {
         enabled_events: WEBHOOK_EVENTS,
-        description:    'Urban Culture Hub — managed Stripe webhook',
-      }
-    );
-    log(`Webhook configured: ${webhook.url} (UUID: ${uuid})`);
-
-    // Backfill in background — does not block startup
-    stripeSync.syncBackfill()
-      .then(() => log('Stripe data synced successfully'))
-      .catch((err: any) => log(`Error syncing Stripe data: ${err.message}`, 'error'));
-
-  } catch (error: any) {
-    log(`Failed to initialize Stripe: ${error.message}`, 'error');
-  }
-}
+        description:    'Urban Culture Hub — managed Stripe webh
