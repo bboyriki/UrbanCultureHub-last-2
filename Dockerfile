@@ -14,6 +14,8 @@ WORKDIR /app
 # Copy package manifests first — Docker layer-caches node_modules install
 # and only re-runs npm ci when package-lock.json changes.
 COPY package.json package-lock.json* ./
+# scripts/ must arrive before npm install so the postinstall hook can run
+COPY scripts/ ./scripts/
 
 RUN npm install --legacy-peer-deps
 
