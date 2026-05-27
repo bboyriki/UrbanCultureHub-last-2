@@ -4,6 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "predev": "node -e \"const net=require('net');const s=net.createServer();s.listen(5000,()=>s.close());s.on('error',()=>{try{const {execSync}=require('child_process');execSync(\\\"pkill -f 'tsx server/index' || true\\\");execSync('sleep 1');}catch(e){}});\"",
     "dev": "tsx server/index.ts",
     "postinstall": "node scripts/patch-node-protocol.cjs",
     "prebuild": "node scripts/prepare-build.js",
