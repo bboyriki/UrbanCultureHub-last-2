@@ -154,6 +154,10 @@ export function usePushNotifications() {
         appId:             import.meta.env.VITE_FIREBASE_APP_ID,
       };
 
+      if (!firebaseConfig.messagingSenderId) {
+        console.warn("[Push] VITE_FIREBASE_MESSAGING_SENDER_ID not set — push notifications disabled");
+        return false;
+      }
       const fbApp     = getApps().length ? getApp() : initializeApp(firebaseConfig);
       const messaging = getMessaging(fbApp);
       const swReg     = await navigator.serviceWorker.register("/firebase-messaging-sw.js", { scope: "/" });
