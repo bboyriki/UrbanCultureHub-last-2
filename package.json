@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx server/index.ts",
+    "postinstall": "node scripts/patch-node-protocol.cjs",
     "prebuild": "node scripts/prepare-build.js",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
@@ -165,6 +166,6 @@
     "@tootallnate/once": "3.0.1",
     "protobufjs": "7.5.8",
     "@protobufjs/utf8": "1.1.1",
-    "get-tsconfig": "4.3.0"
+    "get-tsconfig": "*"
   }
 }
