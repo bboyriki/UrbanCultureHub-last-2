@@ -1510,4 +1510,15 @@ function App() {
                   <TermsPromptHandler />
                   <LegalAcceptanceDialog />
                   <CookieConsent />
-                </ShoppingCartProv
+                </ShoppingCartProvider>
+              </NotificationsProvider>
+              </CallProvider>
+            </WebSocketProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

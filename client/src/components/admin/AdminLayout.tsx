@@ -315,4 +315,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-     
+      {/* Floating AI Quick Access (⌘K / Ctrl+K) */}
+      <AiQuickAccess />
+    </div>
+  );
+}
