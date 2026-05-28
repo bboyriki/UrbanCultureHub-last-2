@@ -1017,6 +1017,129 @@ Return JSON exactly like:
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
+  // ── SMART TAILOR — job title required, description optional ───────────────
+  // Pass 1: Claude reads full profile and decides what to highlight/drop/reorder
+  // Pass 2: Claude writes the final CV using only the curated selection
+  app.post("/api/admin/career/cvs/smart-tailor", requireAdmin, async (req, res) => {
+    try {
+      const {
+        jobTitle,
+        jobDescription = "",   // optional
+        language = "en",
+        style = "modern",
+        theme = "",
+      } = req.body ?? {};
+
+      if (!jobTitle || String(jobTitle).trim().length < 2) {
+        return res.status(400).json({ error: "jobTitle is required" });
+      }
+
+      const p = await ensureProfile((req as any).user?.id);
+      const projects = await db.select().from(adminCareerProjects).where(eq(adminCareerProjects.profileId, p.id));
+      const lang = langCode(language);
+      const langMeta = LANGUAGE_GUIDES[lang];
+      const fullCtx = await fullContextForAI(p, projects, lang);
+
+      // ── PASS 1: curation strategy ────────────────────────────────────────
+      const curationR = await aiChat({
+        role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.powerful,
+        jsonMode: true, temperature: 0.3, maxTokens: 1500,
+        system: `You are a senior career strategist. Your job is to read a candidate's full profile and decide — for a specific role — what to highlight, what to downplay, what order to put things in, and what to cut. Be decisive. Reply with valid JSON only.`,
+        messages: [{ role: "user", content: `Analyse this profile for the target role and give me a curation plan.
+
+${fullCtx}
+
+═══ TARGET ROLE ═══
+Job title: ${jobTitle}
+${jobDescription ? `Job description:\n"""${jobDescription}"""` : "(No job description provided — infer from job title and industry norms)"}
+═══════════════════
+
+Return JSON:
+{
+  "fitScore": <0-100>,
+  "topStrengths": ["3-5 genuine profile strengths that match this role"],
+  "gaps": ["1-3 honest gaps — skills or experience missing for this role"],
+  "highlight": ["exact experience titles / venture names / skills to PUT FIRST — most relevant"],
+  "downplay": ["experience titles / items to move to bottom or omit — not relevant for this role"],
+  "omit": ["items that hurt more than help for this role — leave them out entirely"],
+  "sectionOrder": ["summary","experience","ventures","skills","education","achievements","languages"],
+  "powerHeadline": "rewritten professional headline optimised for this exact role",
+  "keywordsToWeave": ["5-8 keywords from the job that should appear naturally in the CV"],
+  "strategistNotes": "2-3 sentence explanation of your curation decisions"
+}` }],
+      });
+
+      const curation = tryParseJson(curationR.text);
+      if (!curation) return res.status(502).json({ error: "Curation pass failed" });
+
+      // ── PASS 2: write the curated CV ──────────────────────────────────────
+      const cvR = await aiChat({
+        role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.powerful,
+        jsonMode: true, temperature: 0.5, maxTokens: 4500,
+        system: `You are a world-class CV writer. You have been given a curated selection plan from a career strategist. Your job is to write the CV following that plan exactly — highlight what they said, omit what they said, use the section order they specified. Never fabricate facts. Reply with valid JSON only.
+
+⚠️ OUTPUT LANGUAGE: ${langMeta.name} (${langMeta.nativeName}). Every string value in the JSON MUST be in ${langMeta.name}.`,
+        messages: [{ role: "user", content: `Write a smart-tailored CV for this role, following the curation plan.
+
+${languageDirective(lang)}
+
+━━━ CANDIDATE PROFILE ━━━
+${fullCtx}
+
+━━━ TARGET ROLE ━━━
+Job title: ${jobTitle}
+${jobDescription ? `Job description:\n"""${jobDescription}"""` : "(Infer from job title)"}
+
+━━━ CURATION PLAN (follow this exactly) ━━━
+Fit score: ${curation.fitScore}/100
+Top strengths to lead with: ${(curation.topStrengths || []).join(", ")}
+Highlight first: ${(curation.highlight || []).join(", ")}
+Downplay (move to bottom): ${(curation.downplay || []).join(", ")}
+Omit entirely: ${(curation.omit || []).join(", ")}
+Section order: ${(curation.sectionOrder || []).join(" → ")}
+Rewritten headline: ${curation.powerHeadline || ""}
+Keywords to weave in naturally: ${(curation.keywordsToWeave || []).join(", ")}
+Strategist notes: ${curation.strategistNotes || ""}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Return JSON:
+{
+  "name": "Smart CV — ${jobTitle} (${langMeta.name})",
+  "headline": "${curation.powerHeadline || ""}",
+  "summary": "4-5 sentence summary laser-focused on ${jobTitle}, in ${langMeta.name}",
+  "skills": [{"category": "category in ${langMeta.name}", "items": ["..."]}],
+  "experience": [{"title":"...","org":"...","location":"...","period":"...","bullets":["impact bullet in ${langMeta.name}"]}],
+  "ventures": [{"name":"...","role":"...","period":"...","summary":"...","highlights":["..."]}],
+  "projects": [{"title":"...","summary":"...","impact":"..."}],
+  "education": [{"degree":"...","institution":"...","period":"...","notes":"..."}],
+  "languages": [{"name":"...","level":"..."}],
+  "achievements": ["..."],
+  "aiNotes": "brief note on what was highlighted and what was cut, in ${langMeta.name}"
+}` }],
+      });
+
+      const cvContent = tryParseJson(cvR.text);
+      if (!cvContent) return res.status(502).json({ error: "CV write pass failed", curation });
+
+      const aiNotes = cvContent.aiNotes; delete cvContent.aiNotes;
+      const cvName = cvContent.name || `Smart CV — ${jobTitle} (${langMeta.name})`;
+      delete cvContent.name;
+
+      const [created] = await db.insert(adminCareerCvs).values({
+        profileId: p.id,
+        name: cvName,
+        style: (theme || style) as any,
+        language: lang,
+        targetRole: jobTitle,
+        targetJobDescription: jobDescription || null,
+        content: cvContent,
+        aiNotes: `FIT: ${curation.fitScore}/100\n\n${curation.strategistNotes || ""}\n\n${aiNotes || ""}`,
+      }).returning();
+
+      res.json({ ...created, curation });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   app.patch("/api/admin/career/cvs/:id", requireAdmin, async (req, res) => {
     const id = Number(req.params.id);
     const patch: any = { ...req.body, updatedAt: new Date() };

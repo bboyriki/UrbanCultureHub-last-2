@@ -930,6 +930,22 @@ function CvsTab() {
   const [openCvId, setOpenCvId] = useState<number | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
 
+  // Smart Tailor state
+  const [tailorForm, setTailorForm] = useState({ jobTitle: "", jobDescription: "", language: "en", style: "modern", theme: "modern" });
+  const [tailorResult, setTailorResult] = useState<any>(null);
+  const [showTailorDesc, setShowTailorDesc] = useState(false);
+
+  const smartTailor = useMutation({
+    mutationFn: () => apiRequest("/api/admin/career/cvs/smart-tailor", "POST", tailorForm).then(r => r.json()),
+    onSuccess: (d: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/career/cvs"] });
+      setTailorResult(d);
+      setOpenCvId(d.cv?.id ?? null);
+      toast({ title: "Smart CV tailored by Claude", description: `Fit score: ${d.curation?.fitScore ?? "—"}/10 · ${d.cv?.name ?? ""}` });
+    },
+    onError: (e: any) => toast({ title: "Smart Tailor failed", description: e.message, variant: "destructive" }),
+  });
+
   const generate = useMutation({
     mutationFn: () => apiRequest("/api/admin/career/cvs/generate", "POST", form).then(r => r.json()),
     onSuccess: (cv: any) => {
@@ -1020,6 +1036,162 @@ function CvsTab() {
           <Button className="col-span-2 bg-violet-600 hover:bg-violet-700" onClick={() => generate.mutate()} disabled={generate.isPending} data-testid="btn-generate-cv">
             {generate.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Claude is writing…</> : <><Sparkles className="w-4 h-4 mr-2" />Generate CV with Claude</>}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* ── Smart CV Tailor ────────────────────────────────────── */}
+      <Card className="border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 to-transparent">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <ScanSearch className="w-4 h-4 text-emerald-400" /> Smart CV Tailor
+            <Badge className="text-[10px] bg-emerald-500/20 text-emerald-300 border-emerald-500/30">AI</Badge>
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Enter a job title (and optionally the job description) — Claude reads your full identity and curates the perfect CV for that role.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <Label className="text-xs">Job title <span className="text-red-400">*</span></Label>
+              <Input
+                value={tailorForm.jobTitle}
+                onChange={e => setTailorForm(f => ({ ...f, jobTitle: e.target.value }))}
+                placeholder="e.g. Community Manager, AI Specialist, Creative Director"
+                data-testid="input-tailor-jobtitle"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Language</Label>
+              <Select value={tailorForm.language} onValueChange={v => setTailorForm(f => ({ ...f, language: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">🇬🇧 English</SelectItem>
+                  <SelectItem value="nl">🇳🇱 Nederlands</SelectItem>
+                  <SelectItem value="ar">🇸🇦 العربية (Arabic)</SelectItem>
+                  <SelectItem value="fr">🇫🇷 Français</SelectItem>
+                  <SelectItem value="de">🇩🇪 Deutsch</SelectItem>
+                  <SelectItem value="es">🇪🇸 Español</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Style</Label>
+              <Select value={tailorForm.style} onValueChange={v => setTailorForm(f => ({ ...f, style: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="modern">Modern</SelectItem>
+                  <SelectItem value="corporate">Corporate</SelectItem>
+                  <SelectItem value="creative">Creative</SelectItem>
+                  <SelectItem value="startup">Startup</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowTailorDesc(v => !v)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showTailorDesc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {showTailorDesc ? "Hide" : "Add"} job description (optional — boosts precision)
+            </button>
+            {showTailorDesc && (
+              <Textarea
+                className="mt-2"
+                rows={5}
+                value={tailorForm.jobDescription}
+                onChange={e => setTailorForm(f => ({ ...f, jobDescription: e.target.value }))}
+                placeholder="Paste the full job posting here. Claude will read it and align your CV exactly to what the employer is looking for — highlighting the right experience, adjusting language, and weaving in keywords."
+                data-testid="textarea-tailor-jd"
+              />
+            )}
+          </div>
+
+          <Button
+            className="w-full bg-emerald-600 hover:bg-emerald-700 font-semibold"
+            onClick={() => smartTailor.mutate()}
+            disabled={smartTailor.isPending || !tailorForm.jobTitle.trim()}
+            data-testid="btn-smart-tailor"
+          >
+            {smartTailor.isPending
+              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Claude is curating your CV…</>
+              : <><ScanSearch className="w-4 h-4 mr-2" />Smart Tailor my CV</>}
+          </Button>
+
+          {tailorResult?.curation && (
+            <div className="space-y-3 pt-1 border-t border-emerald-500/20">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Gauge className="w-4 h-4 text-emerald-400" />
+                  <span className="text-sm font-semibold">Fit score:</span>
+                  <span className={cn(
+                    "text-lg font-bold",
+                    tailorResult.curation.fitScore >= 8 ? "text-emerald-400" :
+                    tailorResult.curation.fitScore >= 6 ? "text-amber-400" : "text-red-400"
+                  )}>{tailorResult.curation.fitScore}/10</span>
+                </div>
+                {tailorResult.curation.powerHeadline && (
+                  <p className="text-xs italic text-muted-foreground flex-1">"{tailorResult.curation.powerHeadline}"</p>
+                )}
+              </div>
+
+              {tailorResult.curation.strategistNotes && (
+                <div className="bg-emerald-500/10 rounded p-2 text-xs text-emerald-200">
+                  <span className="font-semibold flex items-center gap-1 mb-1"><Brain className="w-3 h-3" /> Claude's strategy</span>
+                  {tailorResult.curation.strategistNotes}
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2">
+                {tailorResult.curation.highlight?.length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1 mb-1"><CheckCircle2 className="w-3 h-3" /> Highlighted</div>
+                    <div className="space-y-0.5">
+                      {tailorResult.curation.highlight.map((h: string) => (
+                        <div key={h} className="text-[11px] bg-emerald-500/10 rounded px-1.5 py-0.5 truncate">{h}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {tailorResult.curation.downplay?.length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-semibold text-amber-400 flex items-center gap-1 mb-1"><ArrowRight className="w-3 h-3" /> Deprioritised</div>
+                    <div className="space-y-0.5">
+                      {tailorResult.curation.downplay.map((h: string) => (
+                        <div key={h} className="text-[11px] bg-amber-500/10 rounded px-1.5 py-0.5 truncate">{h}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {tailorResult.curation.omit?.length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-semibold text-red-400 flex items-center gap-1 mb-1"><XCircle className="w-3 h-3" /> Omitted</div>
+                    <div className="space-y-0.5">
+                      {tailorResult.curation.omit.map((h: string) => (
+                        <div key={h} className="text-[11px] bg-red-500/10 rounded px-1.5 py-0.5 truncate">{h}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {tailorResult.curation.keywordsToWeave?.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-semibold text-muted-foreground mb-1">Keywords woven in</div>
+                  <div className="flex flex-wrap gap-1">
+                    {tailorResult.curation.keywordsToWeave.map((k: string) => (
+                      <Badge key={k} variant="outline" className="text-[10px]">{k}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[11px] text-muted-foreground">↓ The tailored CV is now in your saved CVs list below.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
