@@ -33998,5 +33998,74 @@ Rules:
 
   // ── End Snapchat Business Hub ──────────────────────────────────────────────
 
+  // ── Admin: restore users from Firebase export ──────────────────────────────
+  // POST /api/admin/restore-users
+  // Upserts the 11 original users (exported from old DB) back into production.
+  // Safe to call multiple times — uses ON CONFLICT (email) DO UPDATE.
+  app.post("/api/admin/restore-users", requireAdmin, async (_req: Request, res: Response) => {
+    const USERS = [
+      { id:3,  email:"oudaialmouti@gmail.com",             password:"$2b$10$HYICSPUv9Ol9HsIhslyz2.HimHDN/zVjXCudHMfScemJQcbz/crX6", display_name:"Riki Almouti",      role:"admin",       firebase_uid:"rqi8wTPN4fRfLh3QoDvkg7f3xSL2", is_verified:true,  is_approved:true,  location:"Zaandam, Netherlands", profile_picture:"https://res.cloudinary.com/dbutuy5tt/image/upload/v1764516011/profiles/sfmjyyvrmavwmcbpybt6.jpg", art_type:"",         home_city:null,    home_country:null,    status:"active" },
+      { id:4,  email:"rmaru2889@gmail.com",                password:"$2b$10$5efmYvqVPS2a8RODVJwz3uHcbwXwPmAkZ89Gba3fEcslyWMuTGU9y",   display_name:"riki",              role:"admin",       firebase_uid:"pi7yl1j2gdYayFBcW1SRhzEQbXA3", is_verified:true,  is_approved:true,  location:"Zaandam, Netherlands", profile_picture:"https://res.cloudinary.com/dbutuy5tt/image/upload/v1764030336/profiles/piguumavjt1u0nb3qyay.png",  art_type:"",         home_city:"Zaandam",home_country:"Netherlands", status:"active" },
+      { id:6,  email:"marth_craandijk@hotmail.com",        password:null,                                                              display_name:"Marth",             role:"artist",      firebase_uid:"O69l6ofi1chfG7ri3rLLEPF4eYb2", is_verified:false, is_approved:true,  location:null,                   profile_picture:null,                                                                                                   art_type:"Dancer",   home_city:null,    home_country:null,    status:"active" },
+      { id:7,  email:"backtothestraat@gmail.com",          password:null,                                                              display_name:"Breaker",           role:"artist",      firebase_uid:"aYn8GxnJyjbLrDocMbzkFcmi2Eq1", is_verified:false, is_approved:true,  location:null,                   profile_picture:null,                                                                                                   art_type:"Rapper/MC",home_city:null,    home_country:null,    status:"active" },
+      { id:8,  email:"rikim5736@gmail.com",                password:null,                                                              display_name:"Urban Demo",        role:"artist",      firebase_uid:"ZrXUR7timLO3fBQAWmXnYoh1LhH3", is_verified:true,  is_approved:false, location:"Amsterdam, Netherlands",profile_picture:"https://lh3.googleusercontent.com/a/ACg8ocKP5viA7tRYEVbYzH5BkApSgNrH-sMhrXRTmK49hPMa06EiJg=s96-c", art_type:"Breaking / Street Art", home_city:null, home_country:null, status:"active" },
+      { id:9,  email:"craandijkmarth@gmail.com",           password:null,                                                              display_name:"Marth Craandijk",   role:"user",        firebase_uid:"K8HcmjrLjsaBNKU8ilqGCMqNyrA3", is_verified:false, is_approved:true,  location:null,                   profile_picture:"https://lh3.googleusercontent.com/a/ACg8ocJkrtmW9azp1BUpYiw0iT1RU2aK9i-tvLBxcXtqnR0WA7DD5w=s96-c",   art_type:null,       home_city:null,    home_country:null,    status:"active" },
+      { id:10, email:"flusqtayufsqp24g38b@icloud.com",     password:null,                                                              display_name:"Test",              role:"enthusiast",  firebase_uid:"LTV1cbwy5qMN6mM1L0e4ozbJNkG2", is_verified:false, is_approved:true,  location:null,                   profile_picture:null,                                                                                                   art_type:null,       home_city:null,    home_country:null,    status:"active" },
+      { id:11, email:"Rash01@hotmail.nl",                  password:null,                                                              display_name:"Rash",              role:"enthusiast",  firebase_uid:"4diODIZ6znQVo1HlrtQ9WWsJcE02", is_verified:false, is_approved:true,  location:null,                   profile_picture:null,                                                                                                   art_type:null,       home_city:"Almere",home_country:null,    status:"active" },
+      { id:12, email:"stichtingcoffeeanddance@gmail.com",  password:null,                                                              display_name:"john",              role:"spot_owner",  firebase_uid:"28cPNsJ1PTVLK1s3lhNWRKbi1dz2", is_verified:false, is_approved:false, location:null,                   profile_picture:null,                                                                                                   art_type:"Gym / Fitness Center", home_city:null, home_country:null, status:"active" },
+      { id:13, email:"nathalie@ishdancecollective.com",    password:null,                                                              display_name:"Nathalie ISH",      role:"enthusiast",  firebase_uid:"lGJKYDrIPIdCFWx1OGX8tsKayoN2", is_verified:false, is_approved:true,  location:null,                   profile_picture:null,                                                                                                   art_type:null,       home_city:null,    home_country:null,    status:"active" },
+      { id:14, email:"jonathas.8469@gmail.com",            password:null,                                                              display_name:"Jhoow",             role:"enthusiast",  firebase_uid:"tdVB8oNdHSfLwjr7AtNh8tDUhfB3", is_verified:false, is_approved:true,  location:null,                   profile_picture:null,                                                                                                   art_type:null,       home_city:null,    home_country:null,    status:"active" },
+    ];
+
+    const results: Array<{ email: string; action: string }> = [];
+    try {
+      for (const u of USERS) {
+        await db.execute(sql`
+          INSERT INTO users (
+            id, email, password, display_name, role, profile_picture, art_type,
+            is_verified, is_approved, location, status, firebase_uid,
+            home_city, home_country,
+            kvk_verification_status, is_hidden_in_community,
+            is_ai_premium, can_add_spots, can_create_polls, can_share_content,
+            tos_accepted, created_at, updated_at
+          ) VALUES (
+            ${u.id}, ${u.email}, ${u.password ?? null}, ${u.display_name}, ${u.role},
+            ${u.profile_picture ?? null}, ${u.art_type ?? null},
+            ${u.is_verified}, ${u.is_approved}, ${u.location ?? null}, ${u.status},
+            ${u.firebase_uid}, ${u.home_city ?? null}, ${u.home_country ?? null},
+            'pending', false, false, false, false, false, false, now(), now()
+          )
+          ON CONFLICT (email) DO UPDATE SET
+            firebase_uid    = EXCLUDED.firebase_uid,
+            display_name    = EXCLUDED.display_name,
+            role            = EXCLUDED.role,
+            profile_picture = COALESCE(EXCLUDED.profile_picture, users.profile_picture),
+            art_type        = COALESCE(EXCLUDED.art_type, users.art_type),
+            is_verified     = EXCLUDED.is_verified,
+            is_approved     = EXCLUDED.is_approved,
+            location        = COALESCE(EXCLUDED.location, users.location),
+            home_city       = COALESCE(EXCLUDED.home_city, users.home_city),
+            home_country    = COALESCE(EXCLUDED.home_country, users.home_country),
+            updated_at      = now()
+        `);
+        results.push({ email: u.email, action: "upserted" });
+      }
+
+      // Reset sequence to max id
+      await db.execute(sql`
+        SELECT setval(
+          pg_get_serial_sequence('users', 'id'),
+          (SELECT COALESCE(MAX(id), 1) FROM users),
+          true
+        )
+      `);
+
+      return res.json({ ok: true, restored: results.length, users: results });
+    } catch (err: any) {
+      console.error("[restore-users] error:", err);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   return httpServer;
 }
