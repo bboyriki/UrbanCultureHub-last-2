@@ -1561,43 +1561,149 @@ Generate 8-10 questions covering strengths, weaknesses, leadership, failure, cul
   // ── TOOL: COVER LETTER STUDIO ────────────────────────────────────────────
   app.post("/api/admin/career/tools/cover-letter", requireAdmin, async (req, res) => {
     try {
-      const { jobTitle = "", company = "", jobDescription = "", tone = "confident", language = "en" } = req.body ?? {};
+      const {
+        jobTitle = "", company = "", jobDescription = "",
+        tone = "confident", language = "en",
+        hiringManager = "",   // new: "Dear Sarah," instead of "Dear Hiring Manager,"
+        includePs = true,     // new: whether to add a P.S. line
+      } = req.body ?? {};
       if (!jobDescription || jobDescription.trim().length < 30) {
         return res.status(400).json({ error: "Job description required (min 30 chars)" });
       }
       const p = await ensureProfile((req as any).user?.id);
       const projects = await db.select().from(adminCareerProjects).where(eq(adminCareerProjects.profileId, p.id));
+      const lang = langCode(language);
+      const langMeta = LANGUAGE_GUIDES[lang];
+
       const toneGuides: Record<string, string> = {
-        confident: "Direct, bold, confident. Short punchy sentences. States value upfront. No filler.",
-        warm: "Personable and genuine. Shows human side. Professional but conversational.",
-        creative: "Starts with a hook or story. Unexpected angle. Memorable opening.",
-        formal: "Polished, structured, classic business letter format.",
-        startup: "Casual, energetic, culture-driven. Shows personality and impact mindset.",
+        confident: "Direct, bold, confident. Short punchy sentences. States value upfront. No filler words. Reads like a senior exec wrote it.",
+        warm: "Personable, genuine, human. Shows personality behind the CV. Professional but approachable — the reader feels like they already know this person.",
+        creative: "Starts with a surprising hook or micro-story from their background. Unexpected angle. Memorable. Shows personality without being gimmicky.",
+        formal: "Polished, structured, impeccable business letter format. Conservative vocabulary. Measured confidence. Ideal for corporates, banks, governments.",
+        startup: "Casual, fast-paced, culture-driven. Sounds like someone who ships things. Mentions impact over process. Shows they'd fit a lean team.",
       };
+
       const r = await aiChat({
         role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.powerful,
-        jsonMode: true, temperature: 0.65, maxTokens: 3000,
-        system: `You write exceptional cover letters that get interviews. Tone: ${tone} — ${toneGuides[tone] || toneGuides.confident}. Write in ${LANGUAGE_GUIDES[langCode(language) as SupportedLang]?.name || "English"}. Only use real facts from the profile. Reply with valid JSON only.`,
+        jsonMode: true, temperature: 0.65, maxTokens: 3500,
+        system: `You are an elite cover letter writer. Your letters get interviews because they read like a real human wrote them — not ChatGPT, not a template.
+
+RULES:
+- Tone: ${tone} — ${toneGuides[tone] || toneGuides.confident}
+- Language: ${langMeta.name} (${langMeta.nativeName}). Write EVERYTHING in ${langMeta.name}.
+- Length: 280-350 words for the main body. NOT shorter, NOT longer.
+- Structure: 4 strong paragraphs:
+  1. HOOK — compelling opener that makes them stop scrolling. Reference the company/role by name.
+  2. PROOF — 2-3 specific achievements from their real background with concrete detail. Name ventures, events, platforms by their real names.
+  3. FIT — show you understand their specific needs (drawn from the job description) and connect it to something the candidate actually built/did.
+  4. CLOSE — confident ask. Specific next step. Not "I hope to hear from you" — something with more conviction.
+- P.S. line: ${includePs ? "Add a P.S. — one unexpected, memorable personal detail that reinforces fit. Should feel human, not corporate." : "No P.S."}
+- NEVER start with 'I am writing to apply', 'I am very excited', 'As a passionate', or 'I believe I would be a great fit'.
+- NEVER use the word 'passionate', 'synergy', 'leverage', 'dynamic', 'go-getter', or 'team player'.
+- ONLY use real facts from the profile. Do NOT invent achievements.
+- The ${hiringManager ? `salutation addresses ${hiringManager} personally` : "salutation uses the correct professional greeting for the language — NOT 'Dear Hiring Manager'"}.
+
+Reply with valid JSON only.`,
         messages: [{ role: "user", content: `Write a cover letter for this application.
 
-${await fullContextForAI(p, projects, langCode(language))}
+${languageDirective(lang)}
 
-JOB: ${jobTitle || "(see description)"} at ${company || "the company"}
-DESCRIPTION: ${jobDescription}
+━━━ CANDIDATE PROFILE ━━━
+${await fullContextForAI(p, projects, lang)}
+
+━━━ JOB APPLICATION ━━━
+Role: ${jobTitle || "(see description)"}
+Company: ${company || "(see description)"}
+${hiringManager ? `Hiring manager: ${hiringManager}` : ""}
+Job description:
+"""${jobDescription}"""
+━━━━━━━━━━━━━━━━━━━━━━
 
 Return JSON:
 {
-  "subject": "Perfect email subject line for this application",
-  "salutation": "Opening salutation",
-  "coverLetter": "Full cover letter — 4 paragraphs, 250-320 words. Use specific ventures/projects/achievements from their real background.",
-  "postscript": "Optional compelling P.S. line (leave empty string if not needed)",
-  "keyHooks": ["3 strongest angles used in this letter"],
-  "sendingTips": ["2-3 tactical tips for sending/following up"]
+  "subject": "Perfect email subject line — 6-10 words, specific to role + company, attention-grabbing",
+  "salutation": "Opening salutation in ${langMeta.name}",
+  "paragraph1": "HOOK paragraph — compelling opener",
+  "paragraph2": "PROOF paragraph — 2-3 specific achievements with real names/numbers",
+  "paragraph3": "FIT paragraph — their needs + your proof",
+  "paragraph4": "CLOSE paragraph — confident ask with specific next step",
+  "postscript": "${includePs ? "P.S. line — unexpected personal detail that reinforces fit" : ""}",
+  "coverLetter": "Full letter assembled from the 4 paragraphs above, with salutation and closing, formatted as a single string with \\n\\n between paragraphs",
+  "keyHooks": ["3 strongest angles used in this letter — in English (for your reference)"],
+  "sendingTips": ["2-3 tactical tips for sending/following up — in English"],
+  "emailSubjectVariants": ["2 alternative subject line options"]
 }` }],
       });
       const parsed = tryParseJson(r.text);
       if (!parsed) return res.status(502).json({ error: "AI failed to generate cover letter" });
       res.json(parsed);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── JOB SEARCH — Adzuna API proxy ─────────────────────────────────────────
+  // Sign up free at https://developer.adzuna.com — 250 calls/day on free tier.
+  // Set ADZUNA_APP_ID and ADZUNA_APP_KEY in Railway Variables.
+  app.get("/api/admin/career/jobs/search", requireAdmin, async (req, res) => {
+    try {
+      const {
+        q = "",           // search keywords
+        where = "",       // location, e.g. "Amsterdam" or "Netherlands"
+        country = "nl",   // ISO country code: nl, gb, us, de, fr, be, etc.
+        page = "1",
+        resultsPerPage = "10",
+        salaryMin = "",
+        fulltime = "",
+      } = req.query as Record<string, string>;
+
+      const appId  = process.env.ADZUNA_APP_ID;
+      const appKey = process.env.ADZUNA_APP_KEY;
+
+      if (!appId || !appKey) {
+        // Return a helpful mock when keys not set yet
+        return res.json({
+          configured: false,
+          message: "Adzuna API not configured. Add ADZUNA_APP_ID and ADZUNA_APP_KEY to your Railway Variables. Sign up free at https://developer.adzuna.com",
+          jobs: [],
+          total: 0,
+        });
+      }
+
+      const params = new URLSearchParams({
+        app_id: appId,
+        app_key: appKey,
+        results_per_page: resultsPerPage,
+        what: q,
+        ...(where ? { where } : {}),
+        ...(salaryMin ? { salary_min: salaryMin } : {}),
+        ...(fulltime === "1" ? { full_time: "1" } : {}),
+        content_type: "application/json",
+      });
+
+      const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${params}`;
+      const adzunaRes = await fetch(url, { headers: { "Accept": "application/json" } });
+
+      if (!adzunaRes.ok) {
+        const errText = await adzunaRes.text();
+        return res.status(502).json({ error: `Adzuna API error: ${adzunaRes.status}`, detail: errText });
+      }
+
+      const data: any = await adzunaRes.json();
+      const jobs = (data.results || []).map((j: any) => ({
+        id: j.id,
+        title: j.title,
+        company: j.company?.display_name || "",
+        location: j.location?.display_name || "",
+        salary: j.salary_min && j.salary_max
+          ? `€${Math.round(j.salary_min / 1000)}k – €${Math.round(j.salary_max / 1000)}k`
+          : j.salary_min ? `€${Math.round(j.salary_min / 1000)}k+` : "",
+        description: j.description || "",
+        url: j.redirect_url || "",
+        created: j.created,
+        category: j.category?.label || "",
+        contractType: j.contract_type || "",
+      }));
+
+      res.json({ configured: true, total: data.count || 0, jobs });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
@@ -1825,5 +1931,76 @@ Return JSON:
     // Strip private fields
     const { email, phone, rawNotes, userId, ...publicProfile } = p as any;
     res.json({ profile: publicProfile, projects });
+    res.json({ profile: publicProfile, projects });
+  });
+
+  // ── GRANTS — Dutch & EU funding database ─────────────────────────────────
+  app.get("/api/admin/career/grants", requireAdmin, async (req, res) => {
+    try {
+      const { country, category, q } = req.query as Record<string, string>;
+      let grants = GRANTS_DATABASE;
+      if (country) grants = grants.filter(g => g.country.toLowerCase().includes(country.toLowerCase()));
+      if (category) grants = grants.filter(g => g.category.toLowerCase().includes(category.toLowerCase()));
+      if (q) {
+        const lq = q.toLowerCase();
+        grants = grants.filter(g =>
+          g.name.toLowerCase().includes(lq) ||
+          g.focus.toLowerCase().includes(lq) ||
+          g.description.toLowerCase().includes(lq)
+        );
+      }
+      res.json({ grants, total: grants.length });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/admin/career/grants/match", requireAdmin, async (req, res) => {
+    try {
+      const { projectDescription = "", projectTitle = "" } = req.body ?? {};
+      if (!projectDescription || projectDescription.trim().length < 20) {
+        return res.status(400).json({ error: "Project description required (min 20 chars)" });
+      }
+      const p = await ensureProfile((req as any).user?.id);
+      const grantsJson = JSON.stringify(GRANTS_DATABASE.map(g => ({
+        id: g.id, name: g.name, country: g.country, category: g.category,
+        focus: g.focus, maxAmount: g.maxAmount, eligibility: g.eligibility,
+      })));
+      const r = await aiChat({
+        role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.balanced,
+        jsonMode: true, temperature: 0.3, maxTokens: 2000,
+        system: "You are a grant-matching expert for Dutch and EU cultural organisations. Match projects to the most relevant grants based on focus areas, eligibility, and amounts. Reply with valid JSON only.",
+        messages: [{ role: "user", content: `Match this project to the best grants from the database.
+
+PROJECT:
+Title: ${projectTitle || "(untitled)"}
+Description: ${projectDescription}
+
+ORG PROFILE: ${p.headline || p.name || "Cultural organisation"}
+
+GRANTS DATABASE:
+${grantsJson}
+
+Return JSON:
+{
+  "matches": [
+    {
+      "grantId": "grant id from database",
+      "grantName": "grant name",
+      "matchScore": 0-100,
+      "matchReason": "why this grant fits — 2 sentences max",
+      "keyStrengths": ["2-3 strengths of this application"],
+      "warnings": ["any eligibility concerns"]
+    }
+  ]
+}
+Return top 5 matches only, sorted by matchScore descending.` }],
+      });
+      const parsed = tryParseJson(r.text);
+      if (!parsed) return res.status(502).json({ error: "AI failed to match grants" });
+      const enriched = (parsed.matches ?? []).map((m: any) => ({
+        ...m,
+        grant: GRANTS_DATABASE.find(g => g.id === m.grantId) ?? null,
+      }));
+      res.json({ matches: enriched });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 }

@@ -43,6 +43,7 @@ export default function CareerSuite() {
             { v: "match", icon: Target, label: "Job Match" },
             { v: "tools", icon: Sparkles, label: "Power Tools" },
             { v: "insights", icon: Lightbulb, label: "Insights" },
+            { v: "grants", icon: DollarSign, label: "Grants & Funds" },
           ].map(({ v, icon: Icon, label }) => (
             <TabsTrigger key={v} value={v} className="flex-shrink-0 data-[state=active]:bg-violet-600 data-[state=active]:text-white rounded-lg border border-border px-3 py-1.5 text-xs font-medium">
               <Icon className="w-3.5 h-3.5 mr-1" />{label}
@@ -56,6 +57,7 @@ export default function CareerSuite() {
         <TabsContent value="match" className="mt-4"><MatchTab /></TabsContent>
         <TabsContent value="tools" className="mt-4"><ToolsTab /></TabsContent>
         <TabsContent value="insights" className="mt-4"><InsightsTab /></TabsContent>
+        <TabsContent value="grants" className="mt-4"><GrantsTab /></TabsContent>
       </Tabs>
     </div>
   );
@@ -2593,6 +2595,131 @@ function PortfolioTab() {
 }
 
 // ════════════════════════════ JOB MATCH ════════════════════════════
+// ════════════════════════════ JOB FINDER (Adzuna) ════════════════════════════
+function JobFinderCard({ onSelectJob }: { onSelectJob: (job: any) => void }) {
+  const { toast } = useToast();
+  const [expanded, setExpanded] = useState(false);
+  const [search, setSearch] = useState({ q: "", where: "Netherlands", country: "nl", fulltime: "" });
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [configured, setConfigured] = useState(true);
+  const [page, setPage] = useState(1);
+
+  const doSearch = useMutation({
+    mutationFn: (pg: number = 1) => {
+      const params = new URLSearchParams({
+        q: search.q, where: search.where, country: search.country,
+        page: String(pg), resultsPerPage: "10",
+        ...(search.fulltime ? { fulltime: "1" } : {}),
+      });
+      return apiRequest(`/api/admin/career/jobs/search?${params}`).then(r => r.json());
+    },
+    onSuccess: (d: any, pg: any) => {
+      setConfigured(d.configured !== false);
+      if (d.configured === false) { toast({ title: "Adzuna not configured", description: d.message, variant: "destructive" }); return; }
+      setJobs(pg === 1 ? d.jobs : [...jobs, ...d.jobs]);
+      setTotal(d.total || 0);
+      setPage(pg);
+    },
+    onError: (e: any) => toast({ title: "Search failed", description: e.message, variant: "destructive" }),
+  });
+
+  const COUNTRIES = [["nl","🇳🇱 Netherlands"],["gb","🇬🇧 UK"],["us","🇺🇸 USA"],["de","🇩🇪 Germany"],["fr","🇫🇷 France"],["be","🇧🇪 Belgium"]];
+
+  return (
+    <Card className="border-sky-500/40 bg-gradient-to-br from-sky-500/10 to-transparent">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Briefcase className="w-4 h-4 text-sky-400" /> Live Job Finder
+            <Badge className="text-[10px] bg-sky-500/20 text-sky-300 border-sky-500/30">Adzuna API</Badge>
+          </CardTitle>
+          <button onClick={() => setExpanded(v => !v)} className="text-muted-foreground hover:text-foreground">
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Search real live job listings — then one-click analyze fit or generate a cover letter for any result.</p>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="space-y-3">
+          {!configured && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs space-y-1">
+              <div className="font-semibold text-amber-300 flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> One-time setup needed</div>
+              <p className="text-muted-foreground">Sign up free at <a href="https://developer.adzuna.com" target="_blank" rel="noreferrer" className="text-sky-400 underline">developer.adzuna.com</a> (takes 2 min, 250 free searches/day), then add to Railway:</p>
+              <code className="block bg-black/30 rounded p-2 text-[11px] font-mono">ADZUNA_APP_ID=your_id<br/>ADZUNA_APP_KEY=your_key</code>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2">
+              <Label className="text-xs">Keywords</Label>
+              <Input className="h-8 text-xs mt-0.5" placeholder="e.g. community manager, AI product, cultural programs" value={search.q}
+                onChange={e => setSearch(s => ({ ...s, q: e.target.value }))}
+                onKeyDown={e => e.key === "Enter" && doSearch.mutate(1)} />
+            </div>
+            <div>
+              <Label className="text-xs">Location</Label>
+              <Input className="h-8 text-xs mt-0.5" placeholder="Amsterdam, Netherlands…" value={search.where}
+                onChange={e => setSearch(s => ({ ...s, where: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Country</Label>
+              <Select value={search.country} onValueChange={v => setSearch(s => ({ ...s, country: v }))}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{COUNTRIES.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 pt-4">
+              <input type="checkbox" id="fulltime" checked={search.fulltime === "1"} onChange={e => setSearch(s => ({ ...s, fulltime: e.target.checked ? "1" : "" }))} className="w-4 h-4" />
+              <label htmlFor="fulltime" className="text-xs cursor-pointer">Full-time only</label>
+            </div>
+          </div>
+          <Button className="w-full bg-sky-600 hover:bg-sky-700 gap-2" onClick={() => doSearch.mutate(1)} disabled={doSearch.isPending || !search.q.trim()}>
+            {doSearch.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Searching…</> : <><ScanSearch className="w-4 h-4" />Search jobs</>}
+          </Button>
+          {jobs.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-[11px] text-muted-foreground">{total.toLocaleString()} results · showing {jobs.length}</div>
+              {jobs.map((job: any) => (
+                <div key={job.id} className="border rounded-lg p-3 space-y-2 bg-card">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm leading-tight">{job.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{job.company} · {job.location}</div>
+                      {(job.salaryMin || job.salaryMax) && (
+                        <div className="text-xs text-emerald-400 font-medium mt-0.5">
+                          {job.salaryMin && job.salaryMax ? `€${Math.round(job.salaryMin/1000)}k–€${Math.round(job.salaryMax/1000)}k` : job.salaryMin ? `From €${Math.round(job.salaryMin/1000)}k` : `Up to €${Math.round(job.salaryMax/1000)}k`}
+                        </div>
+                      )}
+                      {job.contractType && <Badge variant="outline" className="text-[10px] mt-1">{job.contractType}</Badge>}
+                    </div>
+                    <a href={job.url} target="_blank" rel="noreferrer" className="shrink-0">
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                    </a>
+                  </div>
+                  {job.description && <p className="text-[11px] text-muted-foreground line-clamp-2">{job.description}</p>}
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="h-7 text-xs flex-1 gap-1" onClick={() => onSelectJob(job)}>
+                      <Target className="w-3 h-3" /> Analyze fit
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs flex-1 gap-1" onClick={() => onSelectJob(job)}>
+                      <Mail className="w-3 h-3" /> Cover letter
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {jobs.length < total && (
+                <Button variant="ghost" className="w-full text-xs h-8" onClick={() => doSearch.mutate(page + 1)} disabled={doSearch.isPending}>
+                  {doSearch.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Load more"}
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 function MatchTab() {
   const { toast } = useToast();
   const { data: matches = [] } = useQuery<any[]>({ queryKey: ["/api/admin/career/matches"] });
@@ -2613,6 +2740,12 @@ function MatchTab() {
 
   return (
     <div className="space-y-4">
+      <JobFinderCard onSelectJob={(job: any) => setForm(f => ({
+        ...f,
+        jobTitle: job.title || "",
+        jobDescription: (job.description || "").slice(0, 2000),
+        company: job.company || "",
+      }))} />
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Target className="w-4 h-4 text-violet-400" /> Score a job</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-3">
@@ -2918,76 +3051,113 @@ function InterviewPrepCard() {
 function CoverLetterStudioCard() {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
-  const [form, setForm] = useState({ jobTitle: "", company: "", jobDescription: "", tone: "confident", language: "en" });
+  const [form, setForm] = useState({
+    jobTitle: "", company: "", jobDescription: "",
+    tone: "confident", language: "en", hiringManager: "", includePs: true,
+  });
   const [result, setResult] = useState<any>(null);
 
   const gen = useMutation({
     mutationFn: () => apiRequest("/api/admin/career/tools/cover-letter", "POST", form).then(r => r.json()),
-    onSuccess: d => { setResult(d); toast({ title: "Cover letter ready" }); },
+    onSuccess: d => { setResult(d); toast({ title: "Motivation letter ready", description: d.subject }); },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
-  const TONES = [["confident","Confident"], ["warm","Warm"], ["creative","Creative"], ["formal","Formal"], ["startup","Startup"]];
+  function printLetter() {
+    if (!result) return;
+    const body = [result.salutation, result.paragraph1, result.paragraph2, result.paragraph3, result.paragraph4, form.includePs && result.postscript ? `P.S. ${result.postscript}` : ""].filter(Boolean).join("\n\n");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Georgia,serif;max-width:680px;margin:60px auto;font-size:15px;line-height:1.7;color:#111}p{margin:0 0 1.2em}</style></head><body>${body.split("\n\n").map(p => `<p>${p.replace(/\n/g,"<br>")}</p>`).join("")}</body></html>`;
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:800px;height:1000px";
+    document.body.appendChild(iframe);
+    iframe.contentDocument!.write(html);
+    iframe.contentDocument!.close();
+    iframe.contentWindow!.focus();
+    iframe.contentWindow!.print();
+    setTimeout(() => document.body.removeChild(iframe), 2000);
+  }
 
   return (
     <Card className="border-rose-500/40 bg-gradient-to-br from-rose-500/10 to-transparent">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-rose-400" /> Cover Letter Studio</CardTitle>
+          <CardTitle className="text-sm flex items-center gap-2"><Mail className="w-4 h-4 text-rose-400" /> Motivation Letter Studio</CardTitle>
           <button onClick={() => setExpanded(v => !v)} className="text-muted-foreground hover:text-foreground">{expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
         </div>
-        <p className="text-[11px] text-muted-foreground">Generates a compelling, tone-matched cover letter using real stories from your background — not a generic template.</p>
+        <p className="text-[11px] text-muted-foreground">Claude writes a tailored, human-sounding motivation letter — structured in 4 paragraphs, no clichés, ready to send or print as PDF.</p>
       </CardHeader>
       {expanded && (
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
-            <div><Label className="text-xs">Job title</Label><Input className="h-8 text-xs mt-0.5" placeholder="e.g. Head of Community" value={form.jobTitle} onChange={e => setForm(f => ({ ...f, jobTitle: e.target.value }))} data-testid="input-cover-job" /></div>
-            <div><Label className="text-xs">Company</Label><Input className="h-8 text-xs mt-0.5" placeholder="e.g. Nike Amsterdam" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} /></div>
-            <div className="col-span-2"><Label className="text-xs">Tone</Label>
-              <div className="flex gap-1.5 flex-wrap mt-1">
-                {TONES.map(([v, l]) => (
-                  <button key={v} onClick={() => setForm(f => ({ ...f, tone: v }))} data-testid={`btn-tone-${v}`}
-                    className={cn("text-[11px] px-2.5 py-1 rounded border transition-colors", form.tone === v ? "border-rose-500 bg-rose-500/15 text-rose-300" : "border-border text-muted-foreground hover:border-rose-500/40")}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs">Language</Label>
-              <Select value={form.language} onValueChange={v => setForm(f => ({ ...f, language: v }))}>
+            <div><Label className="text-xs">Job title</Label><Input className="h-8 text-xs mt-0.5" placeholder="e.g. Community Manager" value={form.jobTitle} onChange={e => setForm(f => ({ ...f, jobTitle: e.target.value }))} /></div>
+            <div><Label className="text-xs">Company</Label><Input className="h-8 text-xs mt-0.5" placeholder="e.g. DEPT Agency" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} /></div>
+            <div><Label className="text-xs">Hiring manager name (optional)</Label><Input className="h-8 text-xs mt-0.5" placeholder="e.g. Sarah Johnson" value={form.hiringManager} onChange={e => setForm(f => ({ ...f, hiringManager: e.target.value }))} /></div>
+            <div><Label className="text-xs">Tone</Label>
+              <Select value={form.tone} onValueChange={v => setForm(f => ({ ...f, tone: v }))}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{[["en","🇬🇧 English"],["nl","🇳🇱 Nederlands"],["ar","🇸🇦 Arabic"],["fr","🇫🇷 Français"],["de","🇩🇪 Deutsch"],["es","🇪🇸 Español"]].map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {[["confident","Confident"],["warm","Warm & Human"],["creative","Creative"],["formal","Formal"],["startup","Startup"]].map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2"><Label className="text-xs">Job description <span className="text-red-400">*</span></Label><Textarea rows={5} className="text-xs mt-0.5" placeholder="Paste the full job description here…" value={form.jobDescription} onChange={e => setForm(f => ({ ...f, jobDescription: e.target.value }))} data-testid="textarea-cover-job-desc" /></div>
+            <div><Label className="text-xs">Language</Label>
+              <Select value={form.language} onValueChange={v => setForm(f => ({ ...f, language: v }))}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[["en","🇬🇧 English"],["nl","🇳🇱 Nederlands"],["fr","🇫🇷 Français"],["de","🇩🇪 Deutsch"],["es","🇪🇸 Español"]].map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 pt-4">
+              <input type="checkbox" id="includePs" checked={form.includePs} onChange={e => setForm(f => ({ ...f, includePs: e.target.checked }))} className="w-4 h-4" />
+              <label htmlFor="includePs" className="text-xs cursor-pointer">Include P.S.</label>
+            </div>
           </div>
-          <Button className="w-full bg-rose-600 hover:bg-rose-700 gap-2" onClick={() => gen.mutate()} disabled={gen.isPending || form.jobDescription.trim().length < 30} data-testid="btn-gen-cover-letter">
-            {gen.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Writing cover letter…</> : <><Mail className="w-4 h-4" />Generate cover letter</>}
+          <div>
+            <Label className="text-xs">Job description <span className="text-red-400">*</span></Label>
+            <textarea className="w-full h-28 mt-0.5 rounded-md border bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Paste the full job description…" value={form.jobDescription} onChange={e => setForm(f => ({ ...f, jobDescription: e.target.value }))} />
+          </div>
+          <Button className="w-full bg-rose-600 hover:bg-rose-700 gap-2" onClick={() => gen.mutate()} disabled={gen.isPending || !form.jobDescription.trim()}>
+            {gen.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Claude is writing…</> : <><Mail className="w-4 h-4" />Write motivation letter</>}
           </Button>
+
           {result && (
             <div className="space-y-3">
               {result.subject && (
-                <div className="flex items-center gap-2 p-2 rounded border text-xs">
-                  <span className="font-semibold text-muted-foreground shrink-0">Subject:</span>
-                  <span className="font-mono text-sm flex-1">{result.subject}</span>
-                  <Button size="sm" variant="ghost" className="h-6 px-2 shrink-0" onClick={() => { navigator.clipboard.writeText(result.subject); toast({ title: "Copied" }); }}><Copy className="w-3 h-3" /></Button>
-                </div>
-              )}
-              {result.coverLetter && (
                 <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="text-[10px] font-semibold text-rose-400 uppercase">Cover Letter</div>
-                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { navigator.clipboard.writeText(result.coverLetter); toast({ title: "Copied" }); }}><Copy className="w-3 h-3 mr-1" />Copy</Button>
-                  </div>
-                  <p className="text-xs whitespace-pre-line">{result.coverLetter}</p>
-                  {result.postscript && <p className="text-xs mt-2 italic text-muted-foreground">{result.postscript}</p>}
+                  <div className="text-[10px] font-semibold text-rose-400 uppercase mb-1">Email subject</div>
+                  <p className="text-sm font-medium">{result.subject}</p>
+                  {(result.emailSubjectVariants || []).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <div className="text-[10px] text-muted-foreground uppercase">Alternatives</div>
+                      {result.emailSubjectVariants.map((s: string, i: number) => <p key={i} className="text-xs text-muted-foreground">· {s}</p>)}
+                    </div>
+                  )}
                 </div>
               )}
+
+              <div className="rounded-lg border p-4 space-y-4 bg-card font-serif">
+                {result.salutation && <p className="text-sm font-semibold">{result.salutation}</p>}
+                {result.paragraph1 && <p className="text-sm leading-relaxed">{result.paragraph1}</p>}
+                {result.paragraph2 && <p className="text-sm leading-relaxed">{result.paragraph2}</p>}
+                {result.paragraph3 && <p className="text-sm leading-relaxed">{result.paragraph3}</p>}
+                {result.paragraph4 && <p className="text-sm leading-relaxed">{result.paragraph4}</p>}
+                {form.includePs && result.postscript && <p className="text-sm text-muted-foreground italic mt-2">P.S. {result.postscript}</p>}
+              </div>
+
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="flex-1 gap-1 text-xs" onClick={() => { navigator.clipboard.writeText(result.coverLetter || ""); toast({ title: "Copied to clipboard" }); }}>
+                  <Copy className="w-3 h-3" /> Copy
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 gap-1 text-xs" onClick={printLetter}>
+                  <Download className="w-3 h-3" /> Print / PDF
+                </Button>
+              </div>
+
               {(result.keyHooks || []).length > 0 && (
-                <div className="rounded bg-muted/30 p-2">
-                  <div className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">Angles used</div>
-                  <ul className="space-y-0.5">{result.keyHooks.map((h: string, i: number) => <li key={i} className="text-[11px] flex gap-1"><Check className="w-3 h-3 shrink-0 mt-0.5 text-emerald-400" />{h}</li>)}</ul>
+                <div className="rounded bg-violet-500/10 border border-violet-500/20 p-2.5">
+                  <div className="text-[10px] font-semibold text-violet-400 uppercase mb-1">Key angles Claude used</div>
+                  <ul className="space-y-0.5">{result.keyHooks.map((h: string, i: number) => <li key={i} className="text-xs flex gap-1.5"><Star className="w-3 h-3 shrink-0 mt-0.5 text-violet-400" />{h}</li>)}</ul>
                 </div>
               )}
             </div>
@@ -3529,6 +3699,134 @@ function ApplicationTrackerCard() {
         </CardContent>
       )}
     </Card>
+  );
+}
+
+// ════════════════════════════ GRANTS TAB ════════════════════════════
+function GrantsTab() {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [country, setCountry] = useState("");
+  const [category, setCategory] = useState("");
+  const [matchForm, setMatchForm] = useState({ projectTitle: "", projectDescription: "" });
+  const [matchResults, setMatchResults] = useState<any[]>([]);
+  const [activeView, setActiveView] = useState<"browse"|"match">("browse");
+
+  const grantsQuery = useQuery({
+    queryKey: ["/api/admin/career/grants", { search, country, category }],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (search) params.set("q", search);
+      if (country) params.set("country", country);
+      if (category) params.set("category", category);
+      return apiRequest(`/api/admin/career/grants?${params}`).then(r => r.json());
+    },
+  });
+
+  const matchMutation = useMutation({
+    mutationFn: () => apiRequest("/api/admin/career/grants/match", "POST", matchForm).then(r => r.json()),
+    onSuccess: d => { setMatchResults(d.matches || []); toast({ title: `Found ${d.matches?.length || 0} matching grants` }); },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const grants: any[] = grantsQuery.data?.grants || [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Button size="sm" variant={activeView === "browse" ? "default" : "outline"} onClick={() => setActiveView("browse")} className="text-xs h-8">Browse grants</Button>
+        <Button size="sm" variant={activeView === "match" ? "default" : "outline"} onClick={() => setActiveView("match")} className="text-xs h-8 gap-1"><Wand2 className="w-3 h-3" /> AI match my project</Button>
+      </div>
+
+      {activeView === "browse" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-3 relative">
+              <ScanSearch className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input className="h-8 text-xs pl-8" placeholder="Search grants by keyword…" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <Select value={country} onValueChange={setCountry}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All countries" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All countries</SelectItem>
+                {["Netherlands","European Union","Belgium","Germany","France"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="h-8 text-xs col-span-2"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All categories</SelectItem>
+                {["Culture & Arts","Community & Social","Innovation & Tech","Education","Media & Journalism","Heritage","Sustainability"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {grantsQuery.isLoading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-[11px] text-muted-foreground">{grants.length} grants found</div>
+              {grants.map((g: any) => (
+                <Card key={g.id} className="border-amber-500/20">
+                  <CardContent className="pt-3 pb-3 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-semibold text-sm">{g.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{g.country} · {g.category}</div>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] shrink-0 text-emerald-400 border-emerald-500/30">{g.maxAmount}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{g.description}</p>
+                    <div className="text-[10px] text-muted-foreground"><span className="font-semibold">Eligible: </span>{g.eligibility}</div>
+                    {g.deadline && <div className="text-[10px] text-amber-400"><span className="font-semibold">Deadline: </span>{g.deadline}</div>}
+                    {g.url && <a href={g.url} target="_blank" rel="noreferrer" className="text-[10px] text-sky-400 underline flex items-center gap-1"><ExternalLink className="w-3 h-3" />Apply / Learn more</a>}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeView === "match" && (
+        <Card className="border-violet-500/30">
+          <CardContent className="pt-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Describe your project and Claude will find the best-matching grants from the database.</p>
+            <div>
+              <Label className="text-xs">Project title</Label>
+              <Input className="h-8 text-xs mt-0.5" placeholder="e.g. Community dance program for youth in Amsterdam Noord" value={matchForm.projectTitle} onChange={e => setMatchForm(f => ({ ...f, projectTitle: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Project description <span className="text-red-400">*</span></Label>
+              <textarea className="w-full h-24 mt-0.5 rounded-md border bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Describe your project, target audience, goals, and organisation type…" value={matchForm.projectDescription} onChange={e => setMatchForm(f => ({ ...f, projectDescription: e.target.value }))} />
+            </div>
+            <Button className="w-full bg-violet-600 hover:bg-violet-700 gap-2" onClick={() => matchMutation.mutate()} disabled={matchMutation.isPending || matchForm.projectDescription.trim().length < 20}>
+              {matchMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Matching…</> : <><Wand2 className="w-4 h-4" />Find matching grants</>}
+            </Button>
+
+            {matchResults.length > 0 && (
+              <div className="space-y-3">
+                <div className="text-[10px] font-semibold text-violet-400 uppercase">Top matches</div>
+                {matchResults.map((m: any, i: number) => (
+                  <Card key={i} className="border-violet-500/20">
+                    <CardContent className="pt-3 pb-3 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-semibold text-sm">{m.grantName}</div>
+                        <Badge className={cn("text-[10px] shrink-0", m.matchScore >= 80 ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : m.matchScore >= 60 ? "bg-amber-500/20 text-amber-400 border-amber-500/30" : "bg-muted text-muted-foreground")}>{m.matchScore}% match</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{m.matchReason}</p>
+                      {m.grant?.maxAmount && <div className="text-[10px] text-emerald-400">Up to {m.grant.maxAmount}</div>}
+                      {(m.warnings || []).length > 0 && <div className="text-[10px] text-amber-400">⚠ {m.warnings.join(" · ")}</div>}
+                      {m.grant?.url && <a href={m.grant.url} target="_blank" rel="noreferrer" className="text-[10px] text-sky-400 underline flex items-center gap-1"><ExternalLink className="w-3 h-3" />Apply</a>}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
