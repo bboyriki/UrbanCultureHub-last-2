@@ -2095,28 +2095,33 @@ li::marker{color:#7c3aed}
       `};` +
       `<\/script>`;
 
-    // iOS: use navigator.share (sync canShare check — no await yet so gesture is still live)
-    try {
-      const file = new File([html], name + ".html", { type: "text/html" });
-      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: cv.name + " — CV" })
-          .then(() => toast({ title: "Shared!", description: "Save to Files → open in Safari → Print → Save as PDF." }))
-          .catch((e: any) => { if (e?.name !== "AbortError") console.warn("share error", e); });
-        return;
-      }
-    } catch { /* browser doesn't support share */ }
+    // iOS only: use native Share Sheet (navigator.share)
+    // Skip on desktop/Windows — navigator.canShare returns true there too but opens OS share UI
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isIOS) {
+      try {
+        const file = new File([html], name + ".html", { type: "text/html" });
+        if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: cv.name + " — CV" })
+            .then(() => toast({ title: "Shared!", description: "Save to Files → open in Safari → Print → Save as PDF." }))
+            .catch((e: any) => { if (e?.name !== "AbortError") console.warn("share error", e); });
+          return;
+        }
+      } catch { /* share not supported */ }
+    }
 
-    // Desktop: open new window SYNCHRONOUSLY (inside user-gesture tick — no await before this)
+    // Desktop & Android: open a new window and trigger the browser print dialog
+    // window.open() must be called synchronously (no await before it) to avoid popup blocker
     const w = window.open("", "_blank");
     if (w) {
       w.document.open();
       w.document.write(printHtml);
       w.document.close();
-      toast({ title: "Print dialog opening…", description: "Select 'Save as PDF' as the printer destination." });
+      toast({ title: "Print dialog opening…", description: "Set destination to 'Save as PDF', then click Save." });
       return;
     }
 
-    // Last resort (popup was blocked): download the HTML file instead
+    // Popup was blocked — fall back to downloading the HTML file
     try {
       const blob = new Blob([html], { type: "text/html" });
       const url  = URL.createObjectURL(blob);
@@ -2124,9 +2129,9 @@ li::marker{color:#7c3aed}
       a.href = url; a.download = name + ".html";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast({ title: "HTML file downloaded", description: "Open it in Chrome/Edge → press Ctrl+P → Save as PDF." });
+      toast({ title: "HTML downloaded", description: "Open the file in Chrome/Edge → Ctrl+P → Save as PDF." });
     } catch {
-      toast({ title: "Could not download", description: "Allow popups for this site, then try again.", variant: "destructive" });
+      toast({ title: "Blocked", description: "Allow pop-ups for this site and try again.", variant: "destructive" });
     }
   };
 
