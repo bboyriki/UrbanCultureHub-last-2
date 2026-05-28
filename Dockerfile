@@ -49,7 +49,7 @@ ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
 RUN npm run build
 
 # Remove dev dependencies — keeps the node_modules we copy to the next stage lean.
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --legacy-peer-deps
 
 
 # ─────────────────────────────────────────────────────────────
