@@ -153,18 +153,18 @@ export const ROLE_CATALOGUE: { id: AIRole; label: string; description: string; r
 
 // ───────────── Defaults ─────────────
 const DEFAULT_CONFIG: Record<AIRole, RoleConfig> = {
-  finder:           { provider: "anthropic", model: "claude-haiku-4-5",  fallbackProvider: "openai",    fallbackModel: "gpt-4o-mini" },
+  finder:           { provider: "anthropic", model: "claude-haiku-4-5-20251001", fallbackProvider: "openai", fallbackModel: "gpt-4o-mini" },
   community:        { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
   admin_assistant:  { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
-  content:          { provider: "openai",    model: "gpt-4o",            fallbackProvider: "anthropic", fallbackModel: "claude-sonnet-4-6" },
-  map:              { provider: "anthropic", model: "claude-haiku-4-5",  fallbackProvider: "openai",    fallbackModel: "gpt-4o-mini" },
+  content:          { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
+  map:              { provider: "anthropic", model: "claude-haiku-4-5-20251001", fallbackProvider: "openai", fallbackModel: "gpt-4o-mini" },
   instagram:        { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
   events:           { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
   btts:             { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
-  marketplace:      { provider: "openai",    model: "gpt-4o",            fallbackProvider: "anthropic", fallbackModel: "claude-sonnet-4-6" },
-  linkedin:         { provider: "openai",    model: "gpt-4o",            fallbackProvider: "anthropic", fallbackModel: "claude-sonnet-4-6" },
-  spot_description: { provider: "openai",    model: "gpt-4o-mini",       fallbackProvider: "anthropic", fallbackModel: "claude-haiku-4-5" },
-  urban_ai:         { provider: "anthropic", model: "claude-opus-4-5",   fallbackProvider: "openai",    fallbackModel: "gpt-4o", maxTokens: 1500 },
+  marketplace:      { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
+  linkedin:         { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
+  spot_description: { provider: "anthropic", model: "claude-haiku-4-5-20251001", fallbackProvider: "openai", fallbackModel: "gpt-4o-mini" },
+  urban_ai:         { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o", maxTokens: 1500 },
   default:          { provider: "anthropic", model: "claude-sonnet-4-6", fallbackProvider: "openai",    fallbackModel: "gpt-4o" },
 };
 

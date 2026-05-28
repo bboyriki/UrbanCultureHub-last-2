@@ -27,7 +27,7 @@ import { aiChat } from "./aiRouter";
 import { uploadImage } from "./cloudinary";
 import { storage } from "./storage";
 
-const CLAUDE = { provider: "anthropic" as const, balanced: "claude-sonnet-4-6", powerful: "claude-opus-4-5" };
+const CLAUDE = { provider: "anthropic" as const, balanced: "claude-sonnet-4-6", powerful: "claude-sonnet-4-6" };
 
 // ── LANGUAGE GUIDES — native-quality writing instructions per language ──────────
 // The AI gets explicit cultural / register / RTL / phrasing notes so output reads
