@@ -2083,38 +2083,50 @@ li::marker{color:#7c3aed}
   // Full-screen preview — React overlay instead of window.open (blocked in iOS WKWebView)
   const previewHtml = () => setShowFullscreen(true);
 
-  const downloadPdf = async () => {
+  const downloadPdf = () => {
     const html = getExportHtml();
-    const filename = `${cv.name.replace(/\s+/g, "_")}.html`;
+    const name  = safeName();
+    const printHtml = html +
+      `<script>` +
+      `document.title=${JSON.stringify(name)};` +
+      `window.onload=function(){` +
+        `document.title=${JSON.stringify(name)};` +
+        `setTimeout(function(){window.print();},600);` +
+      `};` +
+      `<\/script>`;
 
-    // Try iOS Share Sheet first (navigator.share with files → "Save to Files" → open in Safari → print as PDF)
+    // iOS: use navigator.share (sync canShare check — no await yet so gesture is still live)
     try {
-      const file = new File([html], filename, { type: "text/html" });
+      const file = new File([html], name + ".html", { type: "text/html" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: `${cv.name} — CV` });
-        toast({ title: "File shared!", description: "Save to Files, then open in Safari → Share → Print to get a PDF." });
+        navigator.share({ files: [file], title: cv.name + " — CV" })
+          .then(() => toast({ title: "Shared!", description: "Save to Files → open in Safari → Print → Save as PDF." }))
+          .catch((e: any) => { if (e?.name !== "AbortError") console.warn("share error", e); });
         return;
       }
-    } catch (e: any) {
-      if (e?.name === "AbortError") return; // user dismissed — not an error
+    } catch { /* browser doesn't support share */ }
+
+    // Desktop: open new window SYNCHRONOUSLY (inside user-gesture tick — no await before this)
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.open();
+      w.document.write(printHtml);
+      w.document.close();
+      toast({ title: "Print dialog opening…", description: "Select 'Save as PDF' as the printer destination." });
+      return;
     }
 
-    // Desktop fallback: hidden iframe print
-    const printHtml = html + `<script>document.title=${JSON.stringify(safeName())};window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>`;
+    // Last resort (popup was blocked): download the HTML file instead
     try {
-      const pf = document.createElement("iframe");
-      pf.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:210mm;height:297mm;border:none;opacity:0;pointer-events:none;";
-      document.body.appendChild(pf);
-      const doc = pf.contentDocument || pf.contentWindow?.document;
-      if (!doc) throw new Error("no doc");
-      doc.open(); doc.write(printHtml); doc.close();
-      setTimeout(() => { try { document.body.removeChild(pf); } catch { /* ignore */ } }, 8000);
-      toast({ title: "Print dialog opening…", description: "Choose 'Save as PDF' in the print dialog." });
+      const blob = new Blob([html], { type: "text/html" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = name + ".html";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "HTML file downloaded", description: "Open it in Chrome/Edge → press Ctrl+P → Save as PDF." });
     } catch {
-      const w = window.open("", "_blank");
-      if (!w) { toast({ title: "Popup blocked", description: "Allow popups to download as PDF.", variant: "destructive" }); return; }
-      w.document.write(printHtml); w.document.close();
-      toast({ title: "Print dialog opening…", description: "Choose 'Save as PDF' as the destination." });
+      toast({ title: "Could not download", description: "Allow popups for this site, then try again.", variant: "destructive" });
     }
   };
 
