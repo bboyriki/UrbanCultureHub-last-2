@@ -48,7 +48,6 @@ import {
   CheckCircle, Zap, ShieldAlert, SendHorizonal, Megaphone, TrendingUp,
   Gauge, Radio, ShieldCheck, Inbox, Wand2, Volume2, Sparkles,
 } from "lucide-react";
-import { SiLinkedin } from "react-icons/si";
 
 type SectionId =
   | "dashboard" | "analytics"
@@ -200,7 +199,7 @@ export default function AdminView() {
         { id: "marketing", label: "Marketing", icon: Megaphone, highlight: "text-orange-500" },
         { id: "outreach", label: "Outreach", icon: SendHorizonal, highlight: "text-emerald-500" },
         { id: "inbox", label: "Email Inbox", icon: Inbox, highlight: "text-blue-500" },
-        { id: "linkedin", label: "LinkedIn", icon: SiLinkedin, highlight: "text-[#0A66C2]" },
+        { id: "linkedin", label: "LinkedIn", icon: highlight: "text-[#0A66C2]" },
         { id: "funding", label: "Funding", icon: TrendingUp, highlight: "text-emerald-500" },
         { id: "event_sources", label: "Event Sources", icon: Radio, highlight: "text-violet-500" },
         { id: "event_validator", label: "Quality Check", icon: CheckCircle, highlight: "text-emerald-500" },

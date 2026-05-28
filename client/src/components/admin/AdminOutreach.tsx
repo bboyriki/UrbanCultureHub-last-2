@@ -16,7 +16,7 @@ import {
   Download, ArrowUpDown, ArrowUp, ArrowDown, Inbox, Reply,
   AlertCircle, Tag, SlidersHorizontal, Star, Linkedin,
 } from "lucide-react";
-import { SiLinkedin } from "react-icons/si";
+import { FaLinkedin } from "react-icons/fa";
 
 // ── Types & config ────────────────────────────────────────────────────────────
 
@@ -971,7 +971,7 @@ export default function AdminOutreach() {
               {leads.filter(l => !!l.linkedinUrl && !l.email).length > 0 && (
                 <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#0A66C2]/5 border border-[#0A66C2]/30">
                   <div className="flex items-center gap-2">
-                    <SiLinkedin className="w-4 h-4 text-[#0A66C2] shrink-0" />
+                    <FaLinkedin className="w-4 h-4 text-[#0A66C2] shrink-0" />
                     <div>
                       <p className="text-sm font-semibold text-[#0A66C2]">{leads.filter(l => !!l.linkedinUrl && !l.email).length} contact{leads.filter(l => !!l.linkedinUrl && !l.email).length !== 1 ? "s" : ""} only reachable via LinkedIn</p>
                       <p className="text-xs text-[#0A66C2]/70">No email — connect, follow, or send a personalized message on LinkedIn</p>
@@ -979,7 +979,7 @@ export default function AdminOutreach() {
                   </div>
                   <button onClick={() => setActiveTab("linkedin")}
                     className="px-3 py-1.5 rounded-lg bg-[#0A66C2] text-white text-xs font-medium hover:bg-[#004182] shrink-0 flex items-center gap-1.5">
-                    <SiLinkedin className="w-3 h-3" /> LinkedIn Outreach
+                    <FaLinkedin className="w-3 h-3" /> LinkedIn Outreach
                   </button>
                 </div>
               )}
@@ -1050,7 +1050,7 @@ export default function AdminOutreach() {
                     });
                     toast({ title: `Opening ${linkedinLeads.length} LinkedIn profile${linkedinLeads.length !== 1 ? "s" : ""}`, description: "Connect or follow each person from their profile page. Browser may ask to allow popups." });
                   }} data-testid="btn-open-all-linkedin">
-                    <SiLinkedin className="w-3 h-3 mr-1" /> Open All LinkedIn ({Array.from(selectedIds).filter(id => !!leads.find(l => l.id === id)?.linkedinUrl).length})
+                    <FaLinkedin className="w-3 h-3 mr-1" /> Open All LinkedIn ({Array.from(selectedIds).filter(id => !!leads.find(l => l.id === id)?.linkedinUrl).length})
                   </Button>
                 )}
                 <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={openBulkCompose}>
@@ -1132,7 +1132,7 @@ export default function AdminOutreach() {
                         {/* LinkedIn badge */}
                         {lead.linkedinUrl && (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#0A66C2]/10 text-[#0A66C2] border border-[#0A66C2]/30">
-                            <SiLinkedin className="w-2.5 h-2.5" /> LinkedIn
+                            <FaLinkedin className="w-2.5 h-2.5" /> LinkedIn
                           </span>
                         )}
                       </div>
@@ -1160,7 +1160,7 @@ export default function AdminOutreach() {
                     )}
                     {lead.linkedinUrl && (
                       <a href={lead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-[#0A66C2] hover:text-[#004182]">
-                        <SiLinkedin className="w-3 h-3 shrink-0" /><span className="truncate">LinkedIn Profile</span>
+                        <FaLinkedin className="w-3 h-3 shrink-0" /><span className="truncate">LinkedIn Profile</span>
                       </a>
                     )}
                   </div>
@@ -1193,7 +1193,7 @@ export default function AdminOutreach() {
                             : "border-[#0A66C2]/40 text-[#0A66C2] hover:bg-[#0A66C2]/10"
                         }`}
                         title="Open LinkedIn profile" data-testid={`btn-linkedin-lead-${lead.id}`}>
-                        <SiLinkedin className="w-3 h-3 shrink-0" />
+                        <FaLinkedin className="w-3 h-3 shrink-0" />
                         {!lead.email ? "Contact on LinkedIn" : "LinkedIn"}
                       </a>
                     ) : null}
@@ -1320,7 +1320,7 @@ export default function AdminOutreach() {
 
             {linkedinOnlyLeads.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-xl border border-border/60">
-                <SiLinkedin className="w-10 h-10 text-[#0A66C2]/20 mx-auto mb-3" />
+                <FaLinkedin className="w-10 h-10 text-[#0A66C2]/20 mx-auto mb-3" />
                 <p className="text-sm font-medium text-muted-foreground">No LinkedIn-only contacts yet</p>
                 <p className="text-xs text-muted-foreground/60 mt-1">Add LinkedIn URLs to leads without email addresses — they'll appear here.</p>
               </div>
@@ -1342,7 +1342,7 @@ export default function AdminOutreach() {
                       {[
                         { step: "1", icon: <Sparkles className="w-3.5 h-3.5" />, label: "AI writes messages", desc: `GPT-4o writes personalized DMs for all ${pendingLeads.length} contacts at once` },
                         { step: "2", icon: <CheckSquare className="w-3.5 h-3.5" />, label: "You review & edit", desc: "Check each message, edit if needed, then start the guided campaign" },
-                        { step: "3", icon: <SiLinkedin className="w-3 h-3" />, label: "One by one campaign", desc: "Copy message → LinkedIn opens → you paste & send → next contact automatically" },
+                        { step: "3", icon: <FaLinkedin className="w-3 h-3" />, label: "One by one campaign", desc: "Copy message → LinkedIn opens → you paste & send → next contact automatically" },
                       ].map(s => (
                         <div key={s.step} className="flex gap-2.5 bg-white/60 rounded-lg p-2.5 border border-white">
                           <div className="w-6 h-6 rounded-full bg-[#0A66C2] text-white text-[10px] font-bold flex items-center justify-center shrink-0">{s.step}</div>
@@ -1460,7 +1460,7 @@ export default function AdminOutreach() {
                           className="bg-[#0A66C2] hover:bg-[#004182] text-white flex-1"
                           onClick={startCampaign}
                         >
-                          <SiLinkedin className="w-3.5 h-3.5 mr-1.5" /> Start Campaign — {campaignMessages.length} contacts
+                          <FaLinkedin className="w-3.5 h-3.5 mr-1.5" /> Start Campaign — {campaignMessages.length} contacts
                         </Button>
                         <Button variant="outline" onClick={generateAiMessages} disabled={campaignGenerating}>
                           <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regenerate
@@ -1493,7 +1493,7 @@ export default function AdminOutreach() {
                     <div className="bg-gradient-to-br from-[#0A66C2]/5 to-white border-2 border-[#0A66C2]/40 rounded-xl p-5 space-y-4">
                       <div className="flex items-start gap-3">
                         <div className="w-11 h-11 rounded-xl bg-[#0A66C2] flex items-center justify-center shrink-0">
-                          <SiLinkedin className="w-5 h-5 text-white" />
+                          <FaLinkedin className="w-5 h-5 text-white" />
                         </div>
                         <div className="flex-1">
                           <p className="font-bold text-base">{currentLead.name || currentLead.organization}</p>
@@ -1601,7 +1601,7 @@ export default function AdminOutreach() {
                           </div>
                           <a href={lead.linkedinUrl!} target="_blank" rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[#0A66C2]/30 text-[#0A66C2] text-[10px] font-medium hover:bg-[#0A66C2]/5">
-                            <SiLinkedin className="w-2.5 h-2.5" /> LinkedIn
+                            <FaLinkedin className="w-2.5 h-2.5" /> LinkedIn
                           </a>
                         </div>
                       ))}
@@ -1626,7 +1626,7 @@ export default function AdminOutreach() {
                           <div className="flex gap-1.5 shrink-0">
                             <a href={lead.linkedinUrl!} target="_blank" rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-[#0A66C2]/40 text-[#0A66C2] text-xs font-medium hover:bg-[#0A66C2]/5">
-                              <SiLinkedin className="w-3 h-3" /> LinkedIn
+                              <FaLinkedin className="w-3 h-3" /> LinkedIn
                             </a>
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openIndividualCompose(lead as any)}>
                               <Send className="w-3 h-3 mr-1" /> Email

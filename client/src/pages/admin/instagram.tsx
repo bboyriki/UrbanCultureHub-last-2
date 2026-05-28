@@ -32,7 +32,8 @@ import {
   UserCog, UserPlus, X, Bookmark, MoreHorizontal,
   Music, Type, Layers, Scissors, Pause, Move, Sliders, Mic, MicOff
 } from "lucide-react";
-import { SiInstagram, SiFacebook, SiLinkedin, SiTiktok } from "react-icons/si";
+import { SiInstagram, SiFacebook, SiTiktok } from "react-icons/si";
+import { FaLinkedin } from "react-icons/fa";
 import TokenHealthBanner from "@/components/instagram/TokenHealthBanner";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, subDays } from "date-fns";
 import { nl } from "date-fns/locale";
@@ -2578,7 +2579,7 @@ function StudioZone({ status, media, postType, setPostType, caption, setCaption,
                     <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{item.caption || "(geen caption)"}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="outline" className="text-[10px] py-0">{item.postType}</Badge>
-                      {item.crossPlatform?.linkedin && <Badge variant="outline" className="text-[10px] py-0 text-blue-600 border-blue-300"><SiLinkedin className="w-2.5 h-2.5 inline mr-1" />LinkedIn</Badge>}
+                      {item.crossPlatform?.linkedin && <Badge variant="outline" className="text-[10px] py-0 text-blue-600 border-blue-300"><FaLinkedin className="w-2.5 h-2.5 inline mr-1" />LinkedIn</Badge>}
                     </div>
                   </div>
                   <button onClick={() => removeFromQueue(item.id)} className="text-muted-foreground hover:text-red-500 transition-colors p-1">
@@ -2710,7 +2711,7 @@ function StudioZone({ status, media, postType, setPostType, caption, setCaption,
                 <p className="text-xs font-extrabold uppercase tracking-wide text-foreground">Externe platforms</p>
                 {[
                   { id: "instagram", label: "Instagram (hoofdaccount)", icon: SiInstagram, color: "text-pink-500", active: true, locked: false },
-                  { id: "linkedin",  label: "LinkedIn",  icon: SiLinkedin,  color: "text-blue-600", active: crossPlatform.linkedin, locked: false },
+                  { id: "linkedin",  label: "LinkedIn",  icon:  color: "text-blue-600", active: crossPlatform.linkedin, locked: false },
                   { id: "tiktok",    label: "TikTok",    icon: SiTiktok,    color: "text-foreground", active: false, locked: true },
                 ].map(({ id, label, icon: Icon, color, active, locked }) => (
                   <div key={id} className={cn("flex items-center gap-3 p-3 rounded-xl border transition-all",

@@ -19,7 +19,8 @@ import {
   BarChart3, Calendar, AlertTriangle, ChevronRight, TrendingUp, Rocket,
   Share2, Globe, Smartphone, Download, Check, Zap, ChevronDown,
 } from "lucide-react";
-import { SiInstagram, SiLinkedin, SiWhatsapp, SiTiktok } from "react-icons/si";
+import { SiInstagram, SiWhatsapp, SiTiktok } from "react-icons/si";
+import { FaLinkedin } from "react-icons/fa";
 
 const APP_URL = "https://urbanculturehub.nl";
 const IOS_URL = "https://apps.apple.com/nl/app/urban-culture-hub/id6743952291?l=en-GB";
@@ -70,7 +71,7 @@ const PROMO_COPY = [
   },
   {
     platform: "LinkedIn",
-    icon: SiLinkedin,
+    icon: FaLinkedin,
     color: "from-blue-600 to-blue-800",
     copy: `Proud to introduce Urban Culture Hub — the platform connecting breakdancers, DJs, graffiti artists, and urban culture creators across the Netherlands.\n\n🌐 urbanculturehub.nl\n\n#UrbanCulture #HipHop #Community #NetherlandsStartup`,
   },
@@ -481,7 +482,7 @@ export default function AdminMarketing() {
             <div className={`rounded-xl border p-3 flex items-center justify-between ${linkedinStatus?.connected ? "border-blue-200 bg-blue-50" : "border-border bg-muted/30"}`}>
               <div className="flex items-center gap-2.5">
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${linkedinStatus?.connected ? "bg-blue-600" : "bg-muted"}`}>
-                  <SiLinkedin className={`w-3.5 h-3.5 ${linkedinStatus?.connected ? "text-white" : "text-muted-foreground"}`} />
+                  <FaLinkedin className={`w-3.5 h-3.5 ${linkedinStatus?.connected ? "text-white" : "text-muted-foreground"}`} />
                 </div>
                 <div>
                   <p className="font-medium text-xs">LinkedIn</p>
@@ -609,7 +610,7 @@ export default function AdminMarketing() {
                 <Button size="sm" variant="outline" className="w-full h-8 text-xs gap-1.5 border-green-200 text-green-700 hover:bg-green-50" data-testid="button-share-whatsapp"><SiWhatsapp className="w-3.5 h-3.5" /> WhatsApp</Button>
               </a>
               <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(APP_URL)}`} target="_blank" rel="noreferrer">
-                <Button size="sm" variant="outline" className="w-full h-8 text-xs gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50" data-testid="button-share-linkedin"><SiLinkedin className="w-3.5 h-3.5" /> LinkedIn</Button>
+                <Button size="sm" variant="outline" className="w-full h-8 text-xs gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50" data-testid="button-share-linkedin"><FaLinkedin className="w-3.5 h-3.5" /> LinkedIn</Button>
               </a>
               <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent("Join the urban culture movement! 🔥 " + APP_URL + " #breakdancing #urbanculture")}`} target="_blank" rel="noreferrer">
                 <Button size="sm" variant="outline" className="w-full h-8 text-xs gap-1.5 hover:bg-muted" data-testid="button-share-twitter"><span className="font-bold">𝕏</span> Twitter/X</Button>

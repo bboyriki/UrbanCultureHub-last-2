@@ -26,7 +26,8 @@ import {
   Bot, Zap, Rocket, ExternalLink, Check, Smartphone, Monitor,
   Download, ChevronDown,
 } from 'lucide-react';
-import { SiInstagram, SiLinkedin, SiWhatsapp, SiTiktok } from 'react-icons/si';
+import { SiInstagram, SiWhatsapp, SiTiktok } from 'react-icons/si';
+import { FaLinkedin } from "react-icons/fa";
 
 const APP_URL = 'https://urbanculturehub.nl';
 const IOS_URL = 'https://apps.apple.com/nl/app/urban-culture-hub/id6743952291?l=en-GB';
@@ -78,7 +79,7 @@ const PROMO_COPY = [
   },
   {
     platform: 'LinkedIn Post',
-    icon: SiLinkedin,
+    icon: FaLinkedin,
     color: 'from-blue-600 to-blue-800',
     copy: `Proud to introduce Urban Culture Hub — the platform connecting breakdancers, DJs, graffiti artists, and urban culture creators across the Netherlands.\n\nWe're building a community where talent meets opportunity. Whether you're an artist looking to get booked or an event organizer seeking performers, Urban Culture Hub is your go-to platform.\n\n🌐 urbanculturehub.nl\n\n#UrbanCulture #HipHop #Community #NetherlandsStartup`,
   },
@@ -544,7 +545,7 @@ export default function AdminMarketingPage() {
             <div className={`rounded-xl border p-4 flex items-center justify-between ${linkedinStatus?.connected ? 'border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900' : 'border-border bg-muted/30'}`}>
               <div className="flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${linkedinStatus?.connected ? 'bg-blue-600' : 'bg-muted'}`}>
-                  <SiLinkedin className={`w-4 h-4 ${linkedinStatus?.connected ? 'text-white' : 'text-muted-foreground'}`} />
+                  <FaLinkedin className={`w-4 h-4 ${linkedinStatus?.connected ? 'text-white' : 'text-muted-foreground'}`} />
                 </div>
                 <div>
                   <p className="font-medium text-sm">LinkedIn</p>
@@ -711,7 +712,7 @@ export default function AdminMarketingPage() {
               </a>
               <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(APP_URL)}`} target="_blank" rel="noreferrer">
                 <Button size="sm" variant="outline" className="w-full h-9 text-xs gap-2 border-blue-200 text-blue-700 hover:bg-blue-50" data-testid="button-share-linkedin">
-                  <SiLinkedin className="w-3.5 h-3.5" /> LinkedIn
+                  <FaLinkedin className="w-3.5 h-3.5" /> LinkedIn
                 </Button>
               </a>
               <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent('Join the urban culture movement! 🔥 ' + APP_URL + ' #breakdancing #urbanculture #hiphop')}`} target="_blank" rel="noreferrer">

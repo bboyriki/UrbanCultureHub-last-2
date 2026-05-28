@@ -28,7 +28,7 @@ import {
   Mic, MicOff, Eye, Edit3, CheckCheck, Database, Network,
   Briefcase, Filter, Target, History as HistoryIcon, MessageSquare, AlertCircle, CalendarDays,
 } from "lucide-react";
-import { SiLinkedin } from "react-icons/si";
+import { FaLinkedin } from "react-icons/fa";
 import { format } from "date-fns";
 
 interface LinkedInStatus {
@@ -1308,7 +1308,7 @@ export default function AdminLinkedIn() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-[#0A66C2] flex items-center justify-center">
-          <SiLinkedin className="h-5 w-5 text-white" />
+          <FaLinkedin className="h-5 w-5 text-white" />
         </div>
         <div>
           <h2 className="text-xl font-bold">LinkedIn</h2>
@@ -1452,7 +1452,7 @@ export default function AdminLinkedIn() {
           ) : (
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <div className="p-3 rounded-full bg-[#0A66C2]/10">
-                <SiLinkedin className="h-5 w-5 text-[#0A66C2]" />
+                <FaLinkedin className="h-5 w-5 text-[#0A66C2]" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm">Connect your LinkedIn account</p>
@@ -1470,7 +1470,7 @@ export default function AdminLinkedIn() {
                   {(connectMutation.isPending || polling) ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <SiLinkedin className="h-4 w-4 mr-2" />
+                    <FaLinkedin className="h-4 w-4 mr-2" />
                   )}
                   {polling ? "Waiting…" : "Connect LinkedIn"}
                 </Button>
@@ -1685,7 +1685,7 @@ export default function AdminLinkedIn() {
                       className="mt-3 bg-[#0A66C2] hover:bg-[#0A66C2]/90 text-white w-full sm:w-auto"
                       onClick={() => window.open("https://www.linkedin.com/in/me/", "_blank", "noopener,noreferrer")}
                     >
-                      <SiLinkedin className="h-3.5 w-3.5 mr-1.5" />
+                      <FaLinkedin className="h-3.5 w-3.5 mr-1.5" />
                       Open My LinkedIn Profile
                       <ExternalLink className="h-3 w-3 ml-1.5" />
                     </Button>
@@ -1721,7 +1721,7 @@ export default function AdminLinkedIn() {
                           window.open("https://www.linkedin.com/in/me/edit/intro/", "_blank", "noopener,noreferrer");
                         }}
                       >
-                        <SiLinkedin className="h-3.5 w-3.5 mr-1.5" />
+                        <FaLinkedin className="h-3.5 w-3.5 mr-1.5" />
                         Edit on LinkedIn
                         <ExternalLink className="h-3 w-3 ml-1.5" />
                       </Button>
@@ -1776,7 +1776,7 @@ export default function AdminLinkedIn() {
                           window.open("https://www.linkedin.com/in/me/edit/about-section/", "_blank", "noopener,noreferrer");
                         }}
                       >
-                        <SiLinkedin className="h-3.5 w-3.5 mr-1.5" />
+                        <FaLinkedin className="h-3.5 w-3.5 mr-1.5" />
                         Edit on LinkedIn
                         <ExternalLink className="h-3 w-3 ml-1.5" />
                       </Button>
@@ -1809,7 +1809,7 @@ export default function AdminLinkedIn() {
                           className="text-[#0A66C2] border-[#0A66C2]/30 hover:bg-[#0A66C2]/5 shrink-0"
                           onClick={() => window.open("https://www.linkedin.com/in/me/edit/skills/", "_blank", "noopener,noreferrer")}
                         >
-                          <SiLinkedin className="h-3.5 w-3.5 mr-1.5" />
+                          <FaLinkedin className="h-3.5 w-3.5 mr-1.5" />
                           Edit Skills on LinkedIn
                           <ExternalLink className="h-3 w-3 ml-1.5" />
                         </Button>
@@ -1922,7 +1922,7 @@ export default function AdminLinkedIn() {
               {[
                 { label: "Total Leads", value: analytics?.leads.total ?? "—", sub: `+${analytics?.leads.thisMonth ?? 0} this month`, icon: <Users className="h-4 w-4" />, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-900/20" },
                 { label: "Posts Published", value: analytics?.posts.published ?? "—", sub: `+${analytics?.posts.thisMonth ?? 0} this month`, icon: <Send className="h-4 w-4" />, color: "text-[#0A66C2]", bg: "bg-[#0A66C2]/5" },
-                { label: "LinkedIn Imported", value: analytics?.leads.linkedinImported ?? "—", sub: "leads via LinkedIn", icon: <SiLinkedin className="h-4 w-4" />, color: "text-[#0A66C2]", bg: "bg-[#0A66C2]/5" },
+                { label: "LinkedIn Imported", value: analytics?.leads.linkedinImported ?? "—", sub: "leads via LinkedIn", icon: <FaLinkedin className="h-4 w-4" />, color: "text-[#0A66C2]", bg: "bg-[#0A66C2]/5" },
                 { label: "Leads Emailed", value: analytics?.leads.emailedLeads ?? "—", sub: "contacted so far", icon: <Mail className="h-4 w-4" />, color: "text-green-600", bg: "bg-green-50 dark:bg-green-900/20" },
               ].map((s, i) => (
                 <Card key={i} className="border-border/60">
@@ -2475,7 +2475,7 @@ export default function AdminLinkedIn() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <SiLinkedin className="h-4 w-4 text-[#0A66C2]" />
+                    <FaLinkedin className="h-4 w-4 text-[#0A66C2]" />
                     Connect on LinkedIn
                   </CardTitle>
                   <CardDescription>
@@ -2534,7 +2534,7 @@ export default function AdminLinkedIn() {
                       }}
                       data-testid="btn-search-connect-linkedin"
                     >
-                      <SiLinkedin className="h-4 w-4 mr-2" />
+                      <FaLinkedin className="h-4 w-4 mr-2" />
                       Search &amp; Connect on LinkedIn
                     </Button>
                     {(connectName || connectOrg) && (
@@ -2546,7 +2546,7 @@ export default function AdminLinkedIn() {
 
                   {/* How it works note */}
                   <div className="flex gap-2 p-3 rounded-xl bg-[#0A66C2]/5 border border-[#0A66C2]/20">
-                    <SiLinkedin className="h-4 w-4 text-[#0A66C2] mt-0.5 shrink-0" />
+                    <FaLinkedin className="h-4 w-4 text-[#0A66C2] mt-0.5 shrink-0" />
                     <div className="text-xs text-muted-foreground space-y-1">
                       <p className="font-medium text-foreground">How it works</p>
                       <p>Click the button above — LinkedIn opens in a new tab with search results for that person. Find them in the list and click <strong>Connect</strong> on their profile to send a connection request.</p>
@@ -2568,7 +2568,7 @@ export default function AdminLinkedIn() {
                             <span className="text-[11px] text-muted-foreground">{h.at}</span>
                             <a href={h.url} target="_blank" rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[#0A66C2] border border-[#0A66C2]/30 hover:bg-[#0A66C2]/10 transition-colors">
-                              <SiLinkedin className="h-3 w-3" /> Open
+                              <FaLinkedin className="h-3 w-3" /> Open
                             </a>
                           </div>
                         </div>
@@ -2993,7 +2993,7 @@ export default function AdminLinkedIn() {
                                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border hover:bg-[#0A66C2]/5 hover:border-[#0A66C2]/40 text-[#0A66C2]"
                                     data-testid={`link-v2-linkedin-${idx}`}
                                   >
-                                    <SiLinkedin className="h-3 w-3" /> Open on LinkedIn
+                                    <FaLinkedin className="h-3 w-3" /> Open on LinkedIn
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
                                 )}
@@ -3072,7 +3072,7 @@ export default function AdminLinkedIn() {
                     {/* LinkedIn URL — first so handle can be shown */}
                     <div className="sm:col-span-2">
                       <Label className="text-xs font-medium flex items-center gap-1.5">
-                        <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
+                        <FaLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
                         LinkedIn Profile URL
                       </Label>
                       <div className="flex gap-2 mt-1">
