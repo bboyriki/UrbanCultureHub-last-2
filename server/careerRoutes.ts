@@ -1672,15 +1672,14 @@ Return JSON:
         app_id: appId,
         app_key: appKey,
         results_per_page: resultsPerPage,
-        what: q,
+        ...(q ? { what: q } : {}),
         ...(where ? { where } : {}),
         ...(salaryMin ? { salary_min: salaryMin } : {}),
         ...(fulltime === "1" ? { full_time: "1" } : {}),
-        content_type: "application/json",
       });
 
       const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${params}`;
-      const adzunaRes = await fetch(url, { headers: { "Accept": "application/json" } });
+      const adzunaRes = await fetch(url, { headers: { "Accept": "application/json", "Content-Type": "application/json" } });
 
       if (!adzunaRes.ok) {
         const errText = await adzunaRes.text();
