@@ -2105,32 +2105,44 @@ li::marker{color:#7c3aed}
       } catch { /* share not supported */ }
     }
 
-    // Desktop & Android: open a blob URL in a new tab via <a target="_blank">
-    // Using <a>.click() is NOT treated as a popup by browsers, so it bypasses popup blockers.
-    // The new tab loads the self-printing HTML and opens the system print dialog.
+    // Desktop & Android: inject a hidden <iframe> and print from inside it.
+    // iframes are NEVER blocked by popup blockers — this is the most reliable approach.
     const printHtml = html +
       `<script>` +
       `document.title=${JSON.stringify(name)};` +
-      `window.onload=function(){` +
-        `document.title=${JSON.stringify(name)};` +
-        `setTimeout(function(){window.print();},600);` +
-      `};` +
       `<\/script>`;
     try {
-      const blob = new Blob([printHtml], { type: "text/html" });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href   = url;
-      a.target = "_blank";
-      a.rel    = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Revoke after a minute — the new tab needs time to load the blob
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      toast({ title: "Print dialog opening…", description: "Set destination to 'Save as PDF', then click Save." });
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;border:none;";
+      document.body.appendChild(iframe);
+      const idoc = iframe.contentDocument ?? iframe.contentWindow?.document;
+      if (!idoc) throw new Error("no iframe doc");
+      idoc.open();
+      idoc.write(printHtml);
+      idoc.close();
+      // Give the iframe time to render fonts/images, then print
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch { window.print(); }
+        // Remove the iframe a few seconds after the dialog appears
+        setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 10_000);
+      }, 800);
+      toast({ title: "Print dialog opening…", description: "Choose 'Save as PDF' as the printer, then click Save." });
     } catch {
-      toast({ title: "Could not open print view", description: "Try right-clicking the page and choosing Print.", variant: "destructive" });
+      // Last-resort: download the HTML file so the user can open it themselves
+      try {
+        const blob = new Blob([html], { type: "text/html" });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href = url; a.download = name + ".html";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5_000);
+        toast({ title: "HTML file downloaded", description: "Open it in Chrome → press Ctrl+P → Save as PDF.", variant: "default" });
+      } catch {
+        toast({ title: "Could not generate PDF", description: "Try again or use Ctrl+P to print this page.", variant: "destructive" });
+      }
     }
   };
 
