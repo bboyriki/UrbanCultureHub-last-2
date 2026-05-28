@@ -2711,7 +2711,7 @@ function StudioZone({ status, media, postType, setPostType, caption, setCaption,
                 <p className="text-xs font-extrabold uppercase tracking-wide text-foreground">Externe platforms</p>
                 {[
                   { id: "instagram", label: "Instagram (hoofdaccount)", icon: SiInstagram, color: "text-pink-500", active: true, locked: false },
-                  { id: "linkedin",  label: "LinkedIn",  icon:  color: "text-blue-600", active: crossPlatform.linkedin, locked: false },
+                  { id: "linkedin",  label: "LinkedIn",  icon: FaLinkedin,  color: "text-blue-600", active: crossPlatform.linkedin, locked: false },
                   { id: "tiktok",    label: "TikTok",    icon: SiTiktok,    color: "text-foreground", active: false, locked: true },
                 ].map(({ id, label, icon: Icon, color, active, locked }) => (
                   <div key={id} className={cn("flex items-center gap-3 p-3 rounded-xl border transition-all",
