@@ -627,13 +627,15 @@ Return JSON:
       }
       const p = await ensureProfile((req as any).user?.id);
       const projects = await db.select().from(adminCareerProjects).where(eq(adminCareerProjects.profileId, p.id));
-      const profileCtx = await fullContextForAI(p, projects, langCode(language));
+      const scoreLang = langCode(language);
+      const scoreLangMeta = LANGUAGE_GUIDES[scoreLang];
+      const profileCtx = await fullContextForAI(p, projects, scoreLang);
 
       // 1) Scoring analysis
       const scoreR = await aiChat({
         role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.powerful,
         jsonMode: true, temperature: 0.4, maxTokens: 2500,
-        system: "You are a senior recruiter and career coach. Objectively compare a candidate's profile to a job description. Be honest — not too harsh, not too lenient. Reply with valid JSON only.",
+        system: `You are a senior recruiter and career coach. Objectively compare a candidate's profile to a job description. Be honest — not too harsh, not too lenient. Reply with valid JSON only.\n\n⚠️ Write ALL text values in ${scoreLangMeta.name}. Do NOT use English unless the language is English.`,
         messages: [{ role: "user", content: `Score this candidate for the job.
 
 ${profileCtx}
@@ -662,7 +664,7 @@ Return JSON:
       const cvR = await aiChat({
         role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.powerful,
         jsonMode: true, temperature: 0.5, maxTokens: 4000,
-        system: "You are a world-class CV writer. Write a CV that maximizes this candidate's chances for this specific job. Never fabricate facts. Reply with valid JSON only.",
+        system: `You are a world-class CV writer. Write a CV that maximizes this candidate's chances for this specific job. Never fabricate facts. Reply with valid JSON only.\n\n⚠️ OUTPUT LANGUAGE: ${scoreLangMeta.name}. Every string in the JSON must be in ${scoreLangMeta.name}.`,
         messages: [{ role: "user", content: `Write a MASTER CV tailored to this specific job.
 
 ${profileCtx}
@@ -961,33 +963,43 @@ Return JSON exactly like (English — strategist's notes are always in English):
         startup: "Fast, scrappy, outcomes-only. Lead with what was built and what shipped. Comfortable with ambiguity language.",
       };
 
+      const lang = langCode(language);
+      const langMeta = LANGUAGE_GUIDES[lang];
+      const langDirective = languageDirective(lang);
+
       const r = await aiChat({
         role: "content", overrideProvider: CLAUDE.provider, overrideModel: CLAUDE.powerful,
         jsonMode: true, temperature: 0.55, maxTokens: 4000,
-        system: "You are a world-class CV writer. You craft CVs that get interviews. You quantify impact, cut filler, surface hidden strengths. You ground every claim in the source material — never invent facts. Always reply with valid JSON only.",
-        messages: [{ role: "user", content: `Write a CV.
+        system: `You are a world-class CV writer. You craft CVs that get interviews. You quantify impact, cut filler, surface hidden strengths. You ground every claim in the source material — never invent facts. Always reply with valid JSON only.
 
-${await fullContextForAI(p, projects, langCode(language))}
+⚠️ OUTPUT LANGUAGE: ${langMeta.name} (${langMeta.nativeName}). Every string value in the JSON — summary, bullets, skills, everything — MUST be written in ${langMeta.name}. Do NOT write in English unless the selected language is English.`,
+        messages: [{ role: "user", content: `▶ TASK: Write a professional CV in ${langMeta.name}.
 
-═══ CV REQUEST ═══
+${langDirective}
+
+━━━ CANDIDATE PROFILE ━━━
+${await fullContextForAI(p, projects, lang)}
+
+━━━ CV REQUEST ━━━
+Language: ${langMeta.name} — ALL text in the JSON must be in ${langMeta.name}.
 Style: ${style} — ${styleGuide[style] || styleGuide.modern}
 ${targetRole ? `Target role: ${targetRole}\n` : ""}${targetJobDescription ? `Target job description:\n"""${targetJobDescription}"""\nTailor every section subtly toward this job — but don't lie.\n` : ""}
-═══════════════════
+━━━━━━━━━━━━━━━━━
 
 Return JSON exactly like:
 {
-  "name": "${name || `CV — ${style}${targetRole ? ` — ${targetRole}` : ""}`}",
-  "summary": "3-4 sentence professional summary",
-  "skills": [{"category": "Marketing", "items": ["..."]}, ...],
-  "experience": [{"title": "...", "org": "...", "location": "...", "period": "...", "bullets": ["impact-led bullet", "..."]}],
-  "ventures": [{"name": "...", "role": "...", "period": "...", "summary": "1-2 lines", "highlights": ["..."]}],
+  "name": "${name || `CV — ${style}${targetRole ? ` — ${targetRole}` : ""} (${langMeta.name})`}",
+  "summary": "3-4 sentence professional summary IN ${langMeta.name}",
+  "skills": [{"category": "Category name in ${langMeta.name}", "items": ["..."]}, ...],
+  "experience": [{"title": "...", "org": "...", "location": "...", "period": "...", "bullets": ["impact-led bullet in ${langMeta.name}", "..."]}],
+  "ventures": [{"name": "...", "role": "...", "period": "...", "summary": "1-2 lines in ${langMeta.name}", "highlights": ["..."]}],
   "projects": [{"title": "...", "summary": "...", "impact": "..."}],
   "education": [{"degree": "...", "institution": "...", "period": "...", "notes": "..."}],
   "languages": [{"name": "Dutch", "level": "Native"}],
   "achievements": ["..."],
   "pressAndAwards": [{"title": "...", "source": "...", "year": "..."}],
   "interests": ["short tagline list"],
-  "aiNotes": "1 paragraph: what you emphasized, what you de-emphasized, and why — for the human's review"
+  "aiNotes": "1 paragraph in ${langMeta.name}: what you emphasized, what you de-emphasized, and why"
 }` }],
       });
       const content = tryParseJson(r.text);
