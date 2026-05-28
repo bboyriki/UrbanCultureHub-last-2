@@ -237,10 +237,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         if (user) {
           // Get a fresh Firebase ID token to include in auth payload.
           // The server verifies this token before trusting any userId/role claims.
-          let freshToken: string | null = token;
-          if (!freshToken) {
-            try { freshToken = await getToken(); } catch { freshToken = null; }
-          }
+          // Always get a fresh token (getToken calls Firebase with forceRefresh=true)
+          // This fixes the token-expired → reconnect loop seen in Railway logs
+          let freshToken: string | null = null;
+          try { freshToken = await getToken(); } catch { freshToken = token || null; }
           const authData: Record<string, any> = {
             userId: user.id,
             role: user.role || 'user',
@@ -301,6 +301,12 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
           // Update last activity timestamp
           setLastActivity(Date.now());
           
+          // Handle token-expired signal from server — force refresh before next reconnect
+          if (data.type === 'auth_error' && data.payload?.code === 'token_expired') {
+            console.warn('🔄 WS: Firebase token expired — will refresh on next reconnect');
+            (globalSocket as any).__tokenExpired = true;
+          }
+
           // Handle auth success with more verbose logging
           if (data.type === 'auth_success' || data.type === 'AUTH_SUCCESS') {
             console.log('🎉 Authentication successful - transitioning to CONNECTED state');
@@ -413,7 +419,11 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         globalIsAuthenticated = false;
         
         // Schedule reconnect if not a clean close
-        if (event.code !== 1000 || !event.wasClean) {
+        // code 4401 = token expired — add extra delay so the fresh token can be fetched
+        if (event.code === 4401) {
+          console.warn('🔄 WS closed: token expired — reconnecting after token refresh delay');
+          scheduleReconnect(3000);
+        } else if (event.code !== 1000 || !event.wasClean) {
           scheduleReconnect();
         }
       };

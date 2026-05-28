@@ -150,7 +150,7 @@ export function initializeWebSocketServer(httpServer: Server, storageInstance: I
   const CONN_RESET_TIME  = 60_000; // reset counter after 1 minute of quiet
   // In production all traffic comes through a proxy (127.0.0.1), so we use the
   // real client IP from X-Forwarded-For and a higher per-user limit.
-  const MAX_RAPID_CONNECTIONS = 20; // per real client per minute
+  const MAX_RAPID_CONNECTIONS = 60; // per real client per minute (raised from 20 — token refresh reconnects are legitimate)
 
   wss.on('connection', (ws: ExtendedWebSocket, req) => {
     ws.isAlive = true;
@@ -245,8 +245,23 @@ export function initializeWebSocketServer(httpServer: Server, storageInstance: I
               }
               handleAuthentication(ws, user.id, user.role || 'user', user.displayName || '', payload);
             } catch (tokenErr: any) {
-              console.warn('[WS] Auth rejected — invalid Firebase token:', tokenErr.message);
-              ws.close(4003, 'Invalid token');
+              const errCode: string = tokenErr?.errorInfo?.code || tokenErr?.code || '';
+              const isExpired = errCode === 'auth/id-token-expired' || tokenErr.message?.includes('expired');
+              if (isExpired) {
+                // Tell client to refresh token — use custom code 4401 so client can distinguish
+                console.warn('[WS] Token expired — notifying client to refresh');
+                try {
+                  ws.send(JSON.stringify({
+                    type: 'auth_error',
+                    payload: { code: 'token_expired', message: 'Firebase token expired — refresh and reconnect' },
+                    timestamp: Date.now(),
+                  }));
+                } catch {}
+                ws.close(4401, 'Token expired');
+              } else {
+                console.warn('[WS] Auth rejected — invalid Firebase token:', tokenErr.message);
+                ws.close(4003, 'Invalid token');
+              }
             }
             return; // handled
           }
