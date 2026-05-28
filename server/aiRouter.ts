@@ -435,9 +435,10 @@ function openai(): OpenAI {
 
 function anthropic(): Anthropic {
   if (_anthropic) return _anthropic;
+  // Use your own Anthropic API key directly — no proxy, no wrapper.
+  // Set ANTHROPIC_API_KEY in Railway Variables (starts with sk-ant-).
   _anthropic = new Anthropic({
-    apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY,
-    ...(process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL ? { baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL } : {}),
+    apiKey: process.env.ANTHROPIC_API_KEY,
   });
   return _anthropic;
 }
