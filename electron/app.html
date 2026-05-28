@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UCH Control Panel</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1e1e2e;--bg2:#181825;--bg3:#11111b;--surface:#313244;--overlay:#45475a;
+  --text:#cdd6f4;--sub:#a6adc8;--blue:#89b4fa;--green:#a6e3a1;--red:#f38ba8;
+  --yellow:#f9e2af;--mauve:#cba6f7;--teal:#94e2d5;--border:#313244;--pink:#f5c2e7;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;}
+
+/* ── App layout ── */
+.app{display:flex;flex-direction:column;height:100vh;}
+.toolbar{height:36px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:5px;padding:0 10px 0 140px;
+  -webkit-app-region:drag;flex-shrink:0;}
+.toolbar *{-webkit-app-region:no-drag;}
+.main{display:flex;flex:1;overflow:hidden;}
+
+/* ── Sidebar ── */
+.sidebar{width:210px;background:var(--bg2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+.sidebar-hdr{padding:7px 10px;font-size:10px;font-weight:700;letter-spacing:.1em;
+  color:var(--sub);text-transform:uppercase;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.file-tree{flex:1;overflow-y:auto;padding:3px 0;}
+.ti{display:flex;align-items:center;gap:3px;padding:2px 6px;cursor:pointer;
+  border-radius:3px;margin:0 3px;white-space:nowrap;overflow:hidden;user-select:none;}
+.ti:hover{background:var(--surface);}
+.ti.active{background:var(--overlay);color:var(--blue);}
+.ti .arr{width:11px;font-size:9px;flex-shrink:0;color:var(--sub);}
+.ti .ic{width:15px;text-align:center;flex-shrink:0;font-size:12px;}
+.ti .nm{overflow:hidden;text-overflow:ellipsis;flex:1;font-size:12px;}
+.ti.dir .nm{color:var(--sub);font-weight:500;}
+
+/* ── Center ── */
+.center{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+.panel-tabs{height:36px;background:var(--bg3);border-bottom:1px solid var(--border);
+  display:flex;align-items:stretch;flex-shrink:0;}
+.ptab{padding:0 16px;border:none;background:transparent;color:var(--sub);cursor:pointer;
+  font-size:12px;font-weight:600;border-right:1px solid var(--border);
+  display:flex;align-items:center;gap:5px;white-space:nowrap;transition:background .15s;}
+.ptab:hover{background:var(--surface);}
+.ptab.active{background:var(--bg);color:var(--text);border-bottom:2px solid var(--blue);}
+.tab-divider{flex:1;border-right:none;}
+.file-tabs-scroll{display:flex;overflow-x:auto;flex:1;scrollbar-width:none;}
+.file-tabs-scroll::-webkit-scrollbar{display:none;}
+.ftab{display:flex;align-items:center;gap:4px;padding:0 10px;border-right:1px solid var(--border);
+  cursor:pointer;white-space:nowrap;min-width:90px;max-width:160px;color:var(--sub);
+  font-size:11px;flex-shrink:0;height:100%;}
+.ftab:hover{background:var(--surface);}
+.ftab.active{background:var(--bg);color:var(--text);border-bottom:2px solid var(--mauve);}
+.ftab.dirty .ftn::after{content:'●';color:var(--blue);margin-left:3px;font-size:7px;vertical-align:middle;}
+.ftn{overflow:hidden;text-overflow:ellipsis;flex:1;}
+.ftc{opacity:0;font-size:14px;line-height:1;padding:0 2px;border-radius:2px;}
+.ftab:hover .ftc,.ftab.active .ftc{opacity:.5;}
+.ftc:hover{opacity:1!important;background:var(--overlay);}
+
+/* ── Main panels ── */
+.mpanel{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.mpanel.hidden{display:none!important;}
+
+/* ── Code editor ── */
+.ed-wrap{flex:1;overflow:hidden;position:relative;}
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;gap:10px;color:var(--sub);}
+.placeholder h2{font-size:20px;font-weight:300;color:var(--text);}
+.CodeMirror{height:100%!important;font-family:'Cascadia Code','Fira Code',Consolas,monospace!important;
+  font-size:13px!important;line-height:1.65!important;}
+.CodeMirror-scroll{height:100%;}
+.save-badge{position:absolute;top:8px;right:12px;background:var(--green);color:#1e1e2e;
+  padding:2px 9px;border-radius:4px;font-size:11px;font-weight:700;
+  opacity:0;transition:opacity .3s;z-index:10;pointer-events:none;}
+.save-badge.show{opacity:1;}
+
+/* ── Preview panel ── */
+#panel-preview{background:var(--bg3);}
+.prev-bar{height:34px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:5px;padding:0 8px;flex-shrink:0;}
+.prev-url{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+  padding:3px 8px;color:var(--text);font-size:12px;outline:none;}
+.prev-url:focus{border-color:var(--blue);}
+webview{flex:1;border:none;background:#fff;}
+.prev-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:1;gap:12px;color:var(--sub);}
+.prev-placeholder .big{font-size:48px;}
+
+/* ── Claude panel ── */
+#panel-claude{background:var(--bg);}
+.claude-msgs{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px;}
+.claude-msg{max-width:82%;padding:10px 13px;border-radius:10px;line-height:1.55;font-size:13px;}
+.claude-msg.user{align-self:flex-end;background:var(--blue);color:#1e1e2e;border-radius:10px 10px 2px 10px;}
+.claude-msg.assistant{align-self:flex-start;background:var(--surface);color:var(--text);border-radius:10px 10px 10px 2px;}
+.claude-msg.error{background:#3d1a1f;color:var(--red);align-self:flex-start;border-left:3px solid var(--red);}
+.claude-msg.loading{align-self:flex-start;background:var(--surface);color:var(--sub);}
+.claude-footer{border-top:1px solid var(--border);padding:10px 12px;flex-shrink:0;background:var(--bg2);}
+.claude-ctx{display:flex;gap:14px;margin-bottom:8px;font-size:12px;color:var(--sub);}
+.claude-ctx label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+.claude-ctx input[type=checkbox]{accent-color:var(--blue);}
+.claude-row{display:flex;gap:8px;align-items:flex-end;}
+.claude-inp{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  padding:8px 10px;color:var(--text);font-size:13px;resize:none;outline:none;
+  font-family:inherit;line-height:1.5;max-height:120px;}
+.claude-inp:focus{border-color:var(--blue);}
+.claude-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:40px 20px;gap:10px;color:var(--sub);text-align:center;}
+.claude-welcome .big{font-size:40px;}
+.claude-welcome h3{font-size:16px;color:var(--text);font-weight:400;}
+pre.code-block{background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;overflow-x:auto;margin:6px 0;font-family:'Cascadia Code',Consolas,monospace;font-size:12px;}
+code.ic{background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:'Cascadia Code',Consolas,monospace;font-size:12px;}
+.code-lang{font-size:10px;color:var(--sub);margin-bottom:4px;font-weight:600;text-transform:uppercase;}
+
+/* ── Right panel ── */
+.right-panel{width:255px;background:var(--bg2);border-left:1px solid var(--border);
+  flex-shrink:0;overflow-y:auto;}
+.sec{padding:10px 12px;border-bottom:1px solid var(--border);}
+.sec-ttl{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--sub);
+  text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.dot.run{background:var(--green);box-shadow:0 0 5px var(--green);}
+.dot.stop{background:var(--overlay);}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.dot.busy{background:var(--yellow);animation:blink .9s infinite;}
+.btn{display:flex;align-items:center;justify-content:center;gap:5px;padding:6px 12px;
+  border-radius:5px;border:none;cursor:pointer;font-size:12px;font-weight:600;
+  width:100%;margin-top:5px;transition:opacity .15s;}
+.btn:hover{opacity:.82;}:active{opacity:.65;}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+.btn-green{background:var(--green);color:#1e1e2e;}
+.btn-red{background:var(--red);color:#1e1e2e;}
+.btn-blue{background:var(--blue);color:#1e1e2e;}
+.btn-mauve{background:var(--mauve);color:#1e1e2e;}
+.btn-surf{background:var(--surface);color:var(--text);}
+.inp{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:5px;
+  padding:5px 8px;color:var(--text);font-size:12px;outline:none;margin-top:5px;}
+.inp:focus{border-color:var(--blue);}
+.stxt{font-size:11px;color:var(--sub);margin-top:4px;}
+.stxt.ok{color:var(--green);}
+.stxt.err{color:var(--red);}
+.ci{font-size:11px;color:var(--sub);padding:2px 0;border-bottom:1px solid var(--border);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ci .ch2{color:var(--mauve);font-family:monospace;}
+.gchange{display:flex;gap:5px;font-size:11px;padding:1px 0;}
+.gM{color:var(--yellow)}.gA{color:var(--green)}.gD{color:var(--red)}
+
+/* ── Logs ── */
+.resize-h{height:3px;background:var(--border);cursor:row-resize;flex-shrink:0;}
+.resize-h:hover{background:var(--blue);}
+.log-panel{height:185px;background:var(--bg3);display:flex;flex-direction:column;flex-shrink:0;}
+.log-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:4px 10px;border-bottom:1px solid var(--border);flex-shrink:0;border-top:1px solid var(--border);}
+.log-ttl{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--sub);text-transform:uppercase;}
+.log-body{flex:1;overflow-y:auto;padding:3px 10px;
+  font-family:'Cascadia Code',Consolas,monospace;font-size:11px;line-height:1.6;}
+.ll{display:flex;gap:7px;}
+.lts{color:var(--overlay);flex-shrink:0;font-size:10px;margin-top:1px;}
+.lt{word-break:break-all;}
+.ll.stdout .lt{color:var(--text);}
+.ll.stderr .lt{color:var(--red);}
+.ll.git    .lt{color:var(--blue);}
+.ll.info   .lt{color:var(--sub);}
+
+/* ── Toolbar buttons ── */
+.tbtn{background:var(--surface);color:var(--text);border:none;border-radius:4px;
+  padding:3px 8px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:4px;white-space:nowrap;}
+.tbtn:hover{background:var(--overlay);}
+.app-title{font-weight:700;font-size:13px;color:var(--text);margin-right:3px;}
+.spacer{flex:1;}
+
+/* ── Settings modal ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99;}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:20px;z-index:100;width:440px;max-height:80vh;overflow-y:auto;}
+.modal h3{font-size:15px;margin-bottom:14px;color:var(--text);}
+.modal label{display:block;font-size:11px;font-weight:600;color:var(--sub);margin-top:12px;margin-bottom:2px;text-transform:uppercase;letter-spacing:.05em;}
+.modal .row{display:flex;gap:6px;margin-top:5px;}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--overlay);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:var(--sub);}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Toolbar ── -->
+  <div class="toolbar">
+    <span class="app-title">🏙 UCH</span>
+    <button class="tbtn" onclick="App.refreshTree()">↻</button>
+    <button class="tbtn" onclick="App.openFolder()">📁</button>
+    <div class="spacer"></div>
+    <button class="tbtn" onclick="App.openRailway()">🚂 Railway</button>
+    <button class="tbtn" onclick="App.openLocalhost()">🌐 localhost</button>
+    <button class="tbtn" onclick="App.openSettings()">⚙ Settings</button>
+  </div>
+
+  <div class="main">
+
+    <!-- ── File Sidebar ── -->
+    <div class="sidebar">
+      <div class="sidebar-hdr">
+        <span>Explorer</span>
+        <span id="proj-name" style="color:var(--mauve);font-size:10px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      </div>
+      <div class="file-tree" id="file-tree">
+        <div style="padding:12px;color:var(--sub)">Loading…</div>
+      </div>
+    </div>
+
+    <!-- ── Center ── -->
+    <div class="center">
+
+      <!-- Panel tab bar -->
+      <div class="panel-tabs">
+        <button class="ptab active" id="ptab-code"    onclick="App.showPanel('code')"   >📝 Code</button>
+        <button class="ptab"        id="ptab-preview" onclick="App.showPanel('preview')">🌐 Preview</button>
+        <button class="ptab"        id="ptab-claude"  onclick="App.showPanel('claude')" >🤖 Claude</button>
+        <div class="tab-divider"></div>
+        <!-- file tabs only shown in Code panel -->
+        <div class="file-tabs-scroll" id="file-tabs"></div>
+      </div>
+
+      <!-- Code panel -->
+      <div id="panel-code" class="mpanel">
+        <div class="ed-wrap" id="ed-wrap">
+          <div class="placeholder">
+            <div style="font-size:48px">🏙</div>
+            <h2>UrbanCultureHub</h2>
+            <div>Click a file in the Explorer to start editing</div>
+          </div>
+          <div class="save-badge" id="save-badge">Saved ✓</div>
+        </div>
+      </div>
+
+      <!-- Preview panel -->
+      <div id="panel-preview" class="mpanel hidden">
+        <div class="prev-bar">
+          <button class="tbtn" onclick="App.previewRefresh()">↻</button>
+          <input  class="prev-url" id="prev-url" value="http://localhost:5000"
+                  onkeydown="if(event.key==='Enter')App.previewNav()">
+          <button class="tbtn" onclick="App.openLocalhost()">⬡ Open</button>
+        </div>
+        <div id="prev-container" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+          <div class="prev-placeholder" id="prev-placeholder">
+            <div class="big">🌐</div>
+            <h3>Live Preview</h3>
+            <div>Start the dev server first, then click Refresh</div>
+            <button class="btn btn-green" style="width:auto;padding:6px 18px;margin-top:4px"
+                    onclick="App.startServer().then(()=>setTimeout(App.previewRefresh,3000))">
+              ▶ Start Server + Preview
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Claude panel -->
+      <div id="panel-claude" class="mpanel hidden">
+        <div class="claude-msgs" id="claude-msgs">
+          <div class="claude-welcome">
+            <div class="big">🤖</div>
+            <h3>Claude AI — Your coding assistant</h3>
+            <div style="font-size:12px;max-width:360px">
+              Ask anything about the codebase. Claude can see the file you have open
+              and recent server logs. Add your Anthropic API key in ⚙ Settings.
+            </div>
+          </div>
+        </div>
+        <div class="claude-footer">
+          <div class="claude-ctx">
+            <label><input type="checkbox" id="inc-file" checked> Current file</label>
+            <label><input type="checkbox" id="inc-logs"> Server logs</label>
+            <button class="tbtn" style="margin-left:auto" onclick="App.claudeClear()">🗑 Clear</button>
+          </div>
+          <div class="claude-row">
+            <textarea class="claude-inp" id="claude-inp" rows="2"
+                      placeholder="Ask Claude about your code…"
+                      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.claudeSend();}"></textarea>
+            <button class="btn btn-mauve" onclick="App.claudeSend()"
+                    style="width:auto;padding:8px 16px;margin-top:0;flex-shrink:0">Send</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /center -->
+
+    <!-- ── Right Controls ── -->
+    <div class="right-panel">
+
+      <div class="sec">
+        <div class="sec-ttl"><span class="dot stop" id="srv-dot"></span>⚡ Server</div>
+        <div class="stxt" id="srv-txt">Not running</div>
+        <button class="btn btn-green" id="btn-start" onclick="App.startServer()">▶ Start Dev Server</button>
+        <button class="btn btn-red"   id="btn-stop"  onclick="App.stopServer()" disabled>⏹ Stop</button>
+        <button class="btn btn-surf"  onclick="App.openLocalhost()" style="margin-top:3px">🌐 Open Browser</button>
+        <button class="btn" id="btn-install" onclick="App.installDeps()" style="background:var(--surface);color:var(--sub);margin-top:3px;font-size:11px">📦 Install Dependencies</button>
+      </div>
+
+      <div class="sec">
+        <div class="sec-ttl">🚀 Deploy</div>
+        <input  class="inp" id="commit-inp" placeholder="Commit message…" value="chore: update">
+        <button class="btn btn-blue" id="btn-deploy" onclick="App.deploy()">🚀 Commit &amp; Push</button>
+        <div class="stxt" id="deploy-txt"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-ttl">📊 Git</div>
+        <div id="git-info"><div class="stxt">Loading…</div></div>
+        <button class="btn btn-surf" onclick="App.refreshGit()" style="margin-top:6px">↻ Refresh</button>
+      </div>
+
+      <div class="sec" id="api-key-sec">
+        <div class="sec-ttl">🤖 Claude API Key</div>
+        <div class="stxt" id="api-key-status">Not set — Claude chat won't work</div>
+        <input class="inp" id="api-key-inp" type="password" placeholder="sk-ant-api03-…" oninput="App.updateApiKey()">
+        <button class="btn btn-mauve" onclick="App.saveApiKey()" style="margin-top:5px">💾 Save Key</button>
+      </div>
+
+      <div class="sec">
+        <div class="sec-ttl">🔗 Links</div>
+        <button class="btn btn-surf" onclick="App.openRailway()">🚂 Railway Dashboard</button>
+        <button class="btn btn-surf" onclick="App.openGitHub()" style="margin-top:3px">⭐ GitHub Repo</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="resize-h" id="resize-h"></div>
+
+  <div class="log-panel" id="log-panel">
+    <div class="log-hdr">
+      <div class="log-ttl">📋 Output <span id="log-cnt" style="color:var(--overlay);font-weight:400;margin-left:4px"></span></div>
+      <div style="display:flex;gap:5px">
+        <button class="tbtn" onclick="App.scrollLogs()">▼</button>
+        <button class="tbtn" onclick="App.clearLogs()">✕</button>
+      </div>
+    </div>
+    <div class="log-body" id="log-body"></div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ── Settings modal ── -->
+<div id="settings-modal" style="display:none">
+  <div class="modal-bg" onclick="App.closeSettings()"></div>
+  <div class="modal">
+    <h3>⚙ Settings</h3>
+    <label>Project Directory</label>
+    <div class="row">
+      <input class="inp" id="s-dir" style="flex:1;margin-top:0" placeholder="C:\...">
+      <button class="tbtn" onclick="App.browseDir()">Browse</button>
+    </div>
+    <label>Anthropic API Key <span style="color:var(--green);font-weight:400">(for Claude AI)</span></label>
+    <input class="inp" id="s-key" type="password" placeholder="sk-ant-api03-…">
+    <label>Railway Dashboard URL</label>
+    <input class="inp" id="s-railway" placeholder="https://railway.app/project/...">
+    <label>GitHub Repo URL</label>
+    <input class="inp" id="s-github" placeholder="https://github.com/...">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-blue" onclick="App.saveSettings()" style="margin-top:0">💾 Save</button>
+      <button class="btn btn-surf" onclick="App.closeSettings()" style="margin-top:0">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- CodeMirror loaded async — does NOT block DOMContentLoaded -->
+<script>
+(function() {
+  var base = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/';
+  var scripts = [
+    base + 'codemirror.min.js',
+    base + 'mode/javascript/javascript.min.js',
+    base + 'mode/xml/xml.min.js',
+    base + 'mode/css/css.min.js',
+    base + 'mode/htmlmixed/htmlmixed.min.js',
+    base + 'addon/edit/closebrackets.min.js',
+    base + 'addon/edit/matchbrackets.min.js',
+  ];
+  var loaded = 0;
+  function next(i) {
+    if (i >= scripts.length) { window._cmReady = true; return; }
+    var s = document.createElement('script');
+    s.src = scripts[i];
+    s.onload  = function() { next(i + 1); };
+    s.onerror = function() { console.warn('[CM] failed to load', scripts[i]); next(i + 1); };
+    document.head.appendChild(s);
+  }
+  next(0);
+})();
+</script>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+const S = {
+  settings:      {},
+  files:         [],
+  active:        null,
+  cm:            null,
+  panel:         'code',
+  claudeMsgs:    [],   // { role, content }
+  webview:       null,
+};
+
+const FILE_ICONS = {
+  ts:'📘',tsx:'⚛️',js:'📒',jsx:'⚛️',json:'📋',html:'🌐',css:'🎨',scss:'🎨',
+  md:'📝',txt:'📄',svg:'🖼',png:'🖼',jpg:'🖼',gif:'🖼',sh:'⚙',bat:'⚙',
+  env:'🔐',toml:'⚙',yaml:'⚙',yml:'⚙',sql:'🗄',prisma:'🗄',
+};
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async () => {
+  // Load settings first — use timeout fallback in case IPC hangs
+  try {
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000));
+    S.settings = await Promise.race([window.uch.getSettings(), timeout]);
+  } catch(e) {
+    console.warn('settings:get failed/timed out, using defaults:', e.message);
+    S.settings = { projectDir: 'C:\\Users\\rikim\\Documents\\GitHub\\UrbanCultureHub-last-2', railwayUrl: 'https://railway.app', githubRepo: 'https://github.com/bboyriki/UrbanCultureHub-last-2', anthropicKey: '' };
+  }
+  updateProjName();
+  setApiKeyStatus(S.settings.anthropicKey);
+  if (S.settings.anthropicKey) document.getElementById('api-key-inp').placeholder = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (saved)';
+
+  // Load tree + git + logs in parallel — don't let one block the others
+  Promise.allSettled([
+    App.refreshTree(),
+    App.refreshGit(),
+    loadInitialLogs(),
+  ]);
+
+  window.uch.onLog(e => appendLogEntry(e));
+  window.uch.onServerStopped(() => setSrvStatus(false));
+  setInterval(App.pollServer, 4000);
+  setInterval(App.refreshGit, 45000);
+});
+
+// Resize log panel
+let resizing = false;
+document.getElementById('resize-h').addEventListener('mousedown', e => { resizing = true; e.preventDefault(); });
+document.addEventListener('mousemove', e => {
+  if (!resizing) return;
+  const appRect = document.querySelector('.app').getBoundingClientRect();
+  document.getElementById('log-panel').style.height = Math.max(50, Math.min(500, appRect.bottom - e.clientY)) + 'px';
+});
+document.addEventListener('mouseup', () => { resizing = false; });
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); App.save(); }
+  if (e.key === 'Escape') App.closeSettings();
+});
+
+function updateProjName() {
+  const p = (S.settings.projectDir || '').replace(/\\/g, '/').split('/');
+  document.getElementById('proj-name').textContent = p.at(-1) || '';
+}
+
+// ═══════════════════════════════════════════
+//  PANEL SWITCHER
+// ═══════════════════════════════════════════
+function showPanel(name) {
+  S.panel = name;
+  ['code','preview','claude'].forEach(p => {
+    document.getElementById('panel-' + p).classList.toggle('hidden', p !== name);
+    document.getElementById('ptab-' + p).classList.toggle('active', p === name);
+  });
+  // hide file tabs when not in code view
+  document.getElementById('file-tabs').style.display = name === 'code' ? 'flex' : 'none';
+}
+
+// ═══════════════════════════════════════════
+//  FILE TREE
+// ═══════════════════════════════════════════
+async function loadTree() {
+  const el = document.getElementById('file-tree');
+  el.innerHTML = '<div style="padding:12px;color:var(--sub)">Loading…</div>';
+  try {
+    const tree = await window.uch.getFileTree();
+    el.innerHTML = '';
+    if (!tree || tree.length === 0) {
+      el.innerHTML = '<div style="padding:12px;color:var(--yellow);font-size:11px;">No files found.<br>Check project folder in ⚙ Settings.</div>';
+    } else {
+      renderNodes(tree, el, 0);
+    }
+  } catch(err) {
+    el.innerHTML = `<div style="padding:12px;color:var(--red)">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderNodes(nodes, container, depth) {
+  for (const n of nodes) {
+    const pl = depth * 11 + 5;
+    const row = document.createElement('div');
+    row.style.paddingLeft = pl + 'px';
+    if (n.type === 'dir') {
+      row.className = 'ti dir';
+      row.innerHTML = `<span class="arr">▶</span><span class="ic">📁</span><span class="nm">${esc(n.name)}</span>`;
+      const kids = document.createElement('div');
+      kids.style.display = 'none';
+      renderNodes(n.children || [], kids, depth + 1);
+      row.addEventListener('click', () => {
+        const open = kids.style.display === 'block';
+        kids.style.display = open ? 'none' : 'block';
+        row.querySelector('.arr').textContent = open ? '▶' : '▼';
+        row.querySelector('.ic').textContent  = open ? '📁' : '📂';
+      });
+      container.appendChild(row);
+      container.appendChild(kids);
+    } else {
+      row.className = 'ti';
+      row.dataset.path = n.path;
+      const ext = n.name.split('.').pop().toLowerCase();
+      row.innerHTML = `<span class="arr"> </span><span class="ic">${FILE_ICONS[ext] || '📄'}</span><span class="nm">${esc(n.name)}</span>`;
+      row.addEventListener('click', () => App.openFile(n.path, n.name));
+      container.appendChild(row);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
+//  EDITOR
+// ═══════════════════════════════════════════
+function cmMode(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (['ts','tsx','js','jsx'].includes(ext)) return { name:'javascript', typescript:true };
+  if (ext === 'html') return 'htmlmixed';
+  if (['css','scss'].includes(ext)) return 'css';
+  if (ext === 'json') return { name:'javascript', json:true };
+  return null;
+}
+
+function renderFileTabs() {
+  const el = document.getElementById('file-tabs');
+  el.innerHTML = '';
+  for (const f of S.files) {
+    const t = document.createElement('div');
+    t.className = 'ftab' + (f === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '');
+    t.innerHTML = `<span class="ftn">${esc(f.name)}</span><span class="ftc" data-p="${esc(f.path)}">✕</span>`;
+    t.addEventListener('click', ev => {
+      if (ev.target.classList.contains('ftc')) App.closeFile(f.path);
+      else { App.activateFile(f); App.showPanel('code'); }
+    });
+    el.appendChild(t);
+  }
+}
+
+function waitForCodeMirror(cb, attempts) {
+  attempts = attempts || 0;
+  if (typeof CodeMirror !== 'undefined') { cb(); return; }
+  if (attempts > 40) { console.error('[CM] CodeMirror never loaded — no editor'); return; }
+  setTimeout(function() { waitForCodeMirror(cb, attempts + 1); }, 250);
+}
+
+function mountEditor(file) {
+  const wrap = document.getElementById('ed-wrap');
+  if (S.cm) { try { S.cm.toTextArea(); } catch(e) {} S.cm = null; }
+  wrap.innerHTML = '<textarea id="cm-ta"></textarea><div class="save-badge" id="save-badge">Saved ✓</div>';
+  const ta = document.getElementById('cm-ta');
+  ta.value = file.content;
+  waitForCodeMirror(function() {
+    if (!document.getElementById('cm-ta')) return; // file was closed while waiting
+    S.cm = CodeMirror.fromTextArea(ta, {
+      mode:             cmMode(file.name),
+      theme:            'material-darker',
+      lineNumbers:      true,
+      autoCloseBrackets:true,
+      matchBrackets:    true,
+      indentUnit:       2,
+      tabSize:          2,
+      lineWrapping:     false,
+      scrollbarStyle:   'native',
+    });
+    S.cm.setSize('100%', '100%');
+    S.cm.on('change', () => {
+      if (S.active) { S.active.content = S.cm.getValue(); S.active.dirty = true; renderFileTabs(); }
+    });
+  });
+}
+
+function showEditorPlaceholder() {
+  if (S.cm) { S.cm.toTextArea(); S.cm = null; }
+  document.getElementById('ed-wrap').innerHTML = `
+    <div class="placeholder">
+      <div style="font-size:48px">🏙</div>
+      <h2>UrbanCultureHub</h2>
+      <div>Click a file in the Explorer to edit it</div>
+    </div>
+    <div class="save-badge" id="save-badge">Saved ✓</div>`;
+}
+
+// ═══════════════════════════════════════════
+//  PREVIEW / WEBVIEW
+// ═══════════════════════════════════════════
+function getOrCreateWebview() {
+  if (S.webview) return S.webview;
+  const container = document.getElementById('prev-container');
+  const placeholder = document.getElementById('prev-placeholder');
+  if (placeholder) placeholder.remove();
+  const wv = document.createElement('webview');
+  wv.setAttribute('src', 'about:blank');
+  wv.style.cssText = 'flex:1;border:none;';
+  container.appendChild(wv);
+  S.webview = wv;
+  return wv;
+}
+
+// ═══════════════════════════════════════════
+//  SERVER STATUS
+// ═══════════════════════════════════════════
+function setSrvStatus(running) {
+  document.getElementById('srv-dot').className = 'dot ' + (running ? 'run' : 'stop');
+  const t = document.getElementById('srv-txt');
+  t.textContent = running ? '● Running on port 5000' : 'Not running';
+  t.className   = 'stxt' + (running ? ' ok' : '');
+  document.getElementById('btn-start').disabled = running;
+  document.getElementById('btn-stop').disabled  = !running;
+}
+
+// ═══════════════════════════════════════════
+//  LOGS
+// ═══════════════════════════════════════════
+async function loadInitialLogs() {
+  const logs = await window.uch.getLogs();
+  logs.forEach(appendLogEntry);
+}
+function appendLogEntry(e) {
+  const body = document.getElementById('log-body');
+  const ts   = e.ts ? new Date(e.ts).toLocaleTimeString() : '';
+  const div  = document.createElement('div');
+  div.className = 'll ' + (e.type || 'info');
+  div.innerHTML  = `<span class="lts">${ts}</span><span class="lt">${esc(e.line)}</span>`;
+  body.appendChild(div);
+  document.getElementById('log-cnt').textContent = body.children.length + ' lines';
+  body.scrollTop = body.scrollHeight;
+}
+
+// ═══════════════════════════════════════════
+//  MARKDOWN RENDERER (for Claude responses)
+// ═══════════════════════════════════════════
+function renderMarkdown(raw) {
+  const parts = raw.split(/(```[\w]*\n?[\s\S]*?```)/g);
+  return parts.map((p, i) => {
+    if (i % 2 === 1) {
+      const m = p.match(/```([\w]*)\n?([\s\S]*?)```/);
+      if (m) {
+        const lang = m[1] || '';
+        const code = m[2].trimEnd().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return `<pre class="code-block">${lang ? `<div class="code-lang">${lang}</div>` : ''}<code>${code}</code></pre>`;
+      }
+    }
+    return p
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/`([^`\n]+)`/g, '<code class="ic">$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+  }).join('');
+}
+
+// ═══════════════════════════════════════════
+//  GIT INFO
+// ═══════════════════════════════════════════
+function renderGitInfo(st) {
+  const el = document.getElementById('git-info');
+  if (!st.ok) { el.innerHTML = `<div class="stxt err">Git error: ${esc(st.error)}</div>`; return; }
+  const changes = st.changes ? st.changes.split('\n').filter(Boolean) : [];
+  const cHtml = changes.map(c => {
+    const code = c.trim()[0] || ' ';
+    return `<div class="gchange g${code}"><span>${esc(code)}</span><span>${esc(c.trim().slice(2))}</span></div>`;
+  }).join('');
+  const rHtml = (st.recentCommits || []).map(c => {
+    const sp = c.indexOf(' ');
+    const hash = c.slice(0, sp);
+    const msg  = c.slice(sp + 1);
+    return `<div class="ci"><span class="ch2">${esc(hash)}</span> ${esc(msg)}</div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="stxt">Branch: <span style="color:var(--mauve)">${esc(st.branch)}</span></div>
+    ${changes.length
+      ? `<div class="stxt" style="color:var(--yellow)">${changes.length} change${changes.length!==1?'s':''}</div>`
+      : '<div class="stxt ok">✓ Clean</div>'}
+    ${cHtml ? `<div style="margin-top:3px">${cHtml}</div>` : ''}
+    <div style="margin-top:8px;font-size:10px;font-weight:700;color:var(--sub);letter-spacing:.08em;text-transform:uppercase">Recent commits</div>
+    <div>${rHtml}</div>`;
+}
+
+// ═══════════════════════════════════════════
+//  CLAUDE CHAT
+// ═══════════════════════════════════════════
+function claudeAddBubble(role, html, extra = '') {
+  const msgs = document.getElementById('claude-msgs');
+  // Remove welcome message on first real message
+  const welcome = msgs.querySelector('.claude-welcome');
+  if (welcome) welcome.remove();
+  const div = document.createElement('div');
+  div.className = 'claude-msg ' + role + (extra ? ' ' + extra : '');
+  div.innerHTML = html;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+// ═══════════════════════════════════════════
+//  APP OBJECT
+// ═══════════════════════════════════════════
+const App = {
+
+  // ── Panels ──
+  showPanel,
+
+  // ── Tree ──
+  async refreshTree() { await loadTree(); },
+
+  // ── Files ──
+  async openFile(filePath, fileName) {
+    let f = S.files.find(x => x.path === filePath);
+    if (!f) {
+      const r = await window.uch.readFile(filePath);
+      if (!r.ok) { alert('Cannot open: ' + r.error); return; }
+      f = { path: filePath, name: fileName, content: r.content, dirty: false };
+      S.files.push(f);
+    }
+    App.activateFile(f);
+    showPanel('code');
+    document.querySelectorAll('.ti[data-path]').forEach(el =>
+      el.classList.toggle('active', el.dataset.path === filePath));
+  },
+
+  activateFile(f) {
+    S.active = f; renderFileTabs(); mountEditor(f);
+  },
+
+  closeFile(filePath) {
+    const idx = S.files.findIndex(x => x.path === filePath);
+    if (idx === -1) return;
+    if (S.files[idx].dirty && !confirm('Unsaved changes — close anyway?')) return;
+    S.files.splice(idx, 1);
+    if (S.active?.path === filePath) {
+      const next = S.files[Math.max(0, idx - 1)] || S.files[0] || null;
+      S.active = next;
+      next ? mountEditor(next) : showEditorPlaceholder();
+    }
+    renderFileTabs();
+  },
+
+  async save() {
+    if (!S.active || !S.cm) return;
+    S.active.content = S.cm.getValue();
+    const r = await window.uch.writeFile(S.active.path, S.active.content);
+    if (r.ok) {
+      S.active.dirty = false; renderFileTabs();
+      const b = document.getElementById('save-badge');
+      if (b) { b.classList.add('show'); setTimeout(() => b.classList.remove('show'), 1300); }
+      // auto-refresh preview if open
+      if (S.panel === 'preview' && S.webview) S.webview.reload();
+    } else {
+      alert('Save failed: ' + r.error);
+    }
+  },
+
+  // ── Server ──
+  async installDeps() {
+    const btn = document.getElementById('btn-install');
+    btn.disabled = true; btn.textContent = '⏳ Installing…';
+    appendLogEntry({ ts: new Date().toISOString(), line: '📦 npm install — this may take a minute…', type: 'info' });
+    const r = await window.uch.npmInstall();
+    btn.disabled = false; btn.textContent = '📦 Install Dependencies';
+    if (r.ok) {
+      appendLogEntry({ ts: new Date().toISOString(), line: '✓ npm install complete! Now click Start Dev Server.', type: 'info' });
+    } else {
+      appendLogEntry({ ts: new Date().toISOString(), line: '✗ npm install failed: ' + r.error, type: 'stderr' });
+    }
+  },
+
+  async startServer() {
+    document.getElementById('btn-start').disabled = true;
+    appendLogEntry({ ts: new Date().toISOString(), line: '▶ Starting…', type: 'info' });
+    const r = await window.uch.startServer();
+    if (r.ok) setSrvStatus(true);
+    else { appendLogEntry({ ts: new Date().toISOString(), line: 'Error: ' + r.error, type: 'stderr' }); document.getElementById('btn-start').disabled = false; }
+    return r;
+  },
+
+  async stopServer() {
+    await window.uch.stopServer(); setSrvStatus(false);
+  },
+
+  async pollServer() {
+    const s = await window.uch.getServerStatus(); setSrvStatus(s.running);
+  },
+
+  // ── Preview ──
+  previewRefresh() {
+    const url = document.getElementById('prev-url').value.trim() || 'http://localhost:5000';
+    const wv  = getOrCreateWebview();
+    wv.src = url;
+  },
+
+  previewNav() {
+    App.previewRefresh();
+  },
+
+  // ── Deploy ──
+  async deploy() {
+    const msg = document.getElementById('commit-inp').value.trim();
+    if (!msg) { alert('Enter a commit message'); return; }
+    const btn = document.getElementById('btn-deploy');
+    const txt = document.getElementById('deploy-txt');
+    btn.disabled = true; btn.textContent = '⏳ Deploying…';
+    txt.textContent = 'Staging…'; txt.className = 'stxt';
+    appendLogEntry({ ts: new Date().toISOString(), line: `=== DEPLOY: ${msg} ===`, type: 'git' });
+    const r = await window.uch.gitPush(msg);
+    btn.disabled = false; btn.textContent = '🚀 Commit & Push';
+    if (r.ok) {
+      txt.textContent = '✓ Pushed! Railway is building…'; txt.className = 'stxt ok';
+      App.refreshGit();
+    } else {
+      txt.textContent = '✗ ' + r.error; txt.className = 'stxt err';
+    }
+  },
+
+  async refreshGit() {
+    renderGitInfo(await window.uch.gitStatus());
+  },
+
+  // ── Logs ──
+  scrollLogs() { const b = document.getElementById('log-body'); b.scrollTop = b.scrollHeight; },
+  clearLogs()  { document.getElementById('log-body').innerHTML = ''; document.getElementById('log-cnt').textContent = ''; },
+
+  // ── Claude ──
+  async claudeSend() {
+    const inp  = document.getElementById('claude-inp');
+    const text = inp.value.trim();
+    if (!text) return;
+    inp.value = '';
+
+    claudeAddBubble('user', esc(text).replace(/\n/g,'<br>'));
+    S.claudeMsgs.push({ role: 'user', content: text });
+
+    const loadEl = claudeAddBubble('loading', '⏳ Thinking…');
+
+    // Build context
+    const incFile = document.getElementById('inc-file').checked;
+    const incLogs = document.getElementById('inc-logs').checked;
+    const fileCtx = incFile && S.active ? { name: S.active.name, content: S.active.content } : null;
+    const logCtx  = incLogs ? (await window.uch.getLogs()).slice(-20) : null;
+
+    const r = await window.uch.claudeChat({ messages: S.claudeMsgs, fileCtx, logCtx });
+    loadEl.remove();
+
+    if (r.ok) {
+      S.claudeMsgs.push({ role: 'assistant', content: r.text });
+      claudeAddBubble('assistant', renderMarkdown(r.text));
+    } else {
+      claudeAddBubble('error', '⚠ ' + esc(r.error));
+    }
+  },
+
+  claudeClear() {
+    S.claudeMsgs = [];
+    const el = document.getElementById('claude-msgs');
+    el.innerHTML = `<div class="claude-welcome">
+      <div class="big">🤖</div>
+      <h3>Claude AI — Your coding assistant</h3>
+      <div style="font-size:12px;max-width:360px">Ask anything about the codebase. Claude can see the file you have open and recent server logs.</div>
+    </div>`;
+  },
+
+  // ── Navigation ──
+  openFolder()    { window.uch.openPath(S.settings.projectDir || '.'); },
+  openRailway()   { window.uch.openExternal(S.settings.railwayUrl  || 'https://railway.app'); },
+  openGitHub()    { window.uch.openExternal(S.settings.githubRepo  || 'https://github.com'); },
+  openLocalhost() { window.uch.openExternal('http://localhost:5000'); },
+
+  // ── Settings ──
+  async openSettings() {
+    const s = S.settings;
+    document.getElementById('s-dir').value     = s.projectDir   || '';
+    document.getElementById('s-key').value     = s.anthropicKey || '';
+    document.getElementById('s-railway').value = s.railwayUrl   || '';
+    document.getElementById('s-github').value  = s.githubRepo   || '';
+    document.getElementById('settings-modal').style.display = 'block';
+  },
+
+  closeSettings() {
+    document.getElementById('settings-modal').style.display = 'none';
+  },
+
+  async browseDir() {
+    const d = await window.uch.browseDir();
+    if (d) document.getElementById('s-dir').value = d;
+  },
+
+  async saveSettings() {
+    const patch = {
+      projectDir:   document.getElementById('s-dir').value.trim(),
+      anthropicKey: document.getElementById('s-key').value.trim(),
+      railwayUrl:   document.getElementById('s-railway').value.trim(),
+      githubRepo:   document.getElementById('s-github').value.trim(),
+    };
+    await window.uch.saveSettings(patch);
+    S.settings = { ...S.settings, ...patch };
+    updateProjName();
+    App.closeSettings();
+    App.refreshTree();
+  },
+
+  async changeDir() {
+    const d = await window.uch.browseDir();
+    if (d) { S.settings.projectDir = d; updateProjName(); App.refreshTree(); }
+  },
+
+  updateApiKey() {
+    // live feedback while typing
+  },
+
+  async saveApiKey() {
+    const key = document.getElementById('api-key-inp').value.trim();
+    if (!key) return;
+    await window.uch.saveSettings({ anthropicKey: key });
+    S.settings.anthropicKey = key;
+    setApiKeyStatus(key);
+    document.getElementById('api-key-inp').value = '';
+    document.getElementById('api-key-inp').placeholder = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (saved)';
+  },
+};
+
+function setApiKeyStatus(key) {
+  const el = document.getElementById('api-key-status');
+  if (!el) return;
+  if (key) {
+    el.textContent = '\u2713 Key saved \u2014 Claude is ready';
+    el.className = 'stxt ok';
+  } else {
+    el.textContent = 'Not set \u2014 Claude chat won\'t work';
+    el.className = 'stxt err';
+  }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

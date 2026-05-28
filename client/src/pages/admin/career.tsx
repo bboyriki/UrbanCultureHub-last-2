@@ -2045,16 +2045,20 @@ li::marker{color:#7c3aed}
 
   // ── Shared save helper ───────────────────────────────────────────────────
   // On iOS WKWebView: navigator.share({ files }) → native Share Sheet → "Save to Files"
-  // On desktop: blob URL download fallback
+  // On desktop (Windows/Mac/Linux): blob URL download — skip navigator.share even if canShare()
+  // returns true (Windows 11 + Edge triggers the OS Share Sheet which is not what we want).
   const shareOrDownload = async (filename: string, content: string, mimeType: string): Promise<"shared" | "cancelled" | "fallback"> => {
-    try {
-      const file = new File([content], filename, { type: mimeType });
-      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename });
-        return "shared";
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isIOS) {
+      try {
+        const file = new File([content], filename, { type: mimeType });
+        if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: filename });
+          return "shared";
+        }
+      } catch (e: any) {
+        if (e?.name === "AbortError") return "cancelled"; // user dismissed share sheet
       }
-    } catch (e: any) {
-      if (e?.name === "AbortError") return "cancelled"; // user dismissed share sheet
     }
     // Desktop / browsers without share-files support
     try {
@@ -2086,17 +2090,8 @@ li::marker{color:#7c3aed}
   const downloadPdf = () => {
     const html = getExportHtml();
     const name  = safeName();
-    const printHtml = html +
-      `<script>` +
-      `document.title=${JSON.stringify(name)};` +
-      `window.onload=function(){` +
-        `document.title=${JSON.stringify(name)};` +
-        `setTimeout(function(){window.print();},600);` +
-      `};` +
-      `<\/script>`;
 
-    // iOS only: use native Share Sheet (navigator.share)
-    // Skip on desktop/Windows — navigator.canShare returns true there too but opens OS share UI
+    // iOS only: use native Share Sheet → Save to Files → open in Safari → Print → Save as PDF
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     if (isIOS) {
       try {
@@ -2110,28 +2105,32 @@ li::marker{color:#7c3aed}
       } catch { /* share not supported */ }
     }
 
-    // Desktop & Android: open a new window and trigger the browser print dialog
-    // window.open() must be called synchronously (no await before it) to avoid popup blocker
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.open();
-      w.document.write(printHtml);
-      w.document.close();
-      toast({ title: "Print dialog opening…", description: "Set destination to 'Save as PDF', then click Save." });
-      return;
-    }
-
-    // Popup was blocked — fall back to downloading the HTML file
+    // Desktop & Android: open a blob URL in a new tab via <a target="_blank">
+    // Using <a>.click() is NOT treated as a popup by browsers, so it bypasses popup blockers.
+    // The new tab loads the self-printing HTML and opens the system print dialog.
+    const printHtml = html +
+      `<script>` +
+      `document.title=${JSON.stringify(name)};` +
+      `window.onload=function(){` +
+        `document.title=${JSON.stringify(name)};` +
+        `setTimeout(function(){window.print();},600);` +
+      `};` +
+      `<\/script>`;
     try {
-      const blob = new Blob([html], { type: "text/html" });
+      const blob = new Blob([printHtml], { type: "text/html" });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
-      a.href = url; a.download = name + ".html";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast({ title: "HTML downloaded", description: "Open the file in Chrome/Edge → Ctrl+P → Save as PDF." });
+      a.href   = url;
+      a.target = "_blank";
+      a.rel    = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a minute — the new tab needs time to load the blob
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast({ title: "Print dialog opening…", description: "Set destination to 'Save as PDF', then click Save." });
     } catch {
-      toast({ title: "Blocked", description: "Allow pop-ups for this site and try again.", variant: "destructive" });
+      toast({ title: "Could not open print view", description: "Try right-clicking the page and choosing Print.", variant: "destructive" });
     }
   };
 
